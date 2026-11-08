@@ -2,7 +2,7 @@
  * App shell en cache pour un démarrage instantané et un usage hors connexion.
  * Incrémenter CACHE à chaque déploiement pour forcer la mise à jour.
  */
-const CACHE = 'vbo-tournoi-v7';
+const CACHE = 'vbo-tournoi-v8';
 
 const APP_SHELL = [
   './',
@@ -42,7 +42,11 @@ self.addEventListener('fetch', (event) => {
   if (req.method !== 'GET') return;
 
   const url = new URL(req.url);
-  if (url.origin !== self.location.origin) return; // ex. polices, Supabase : réseau direct
+  if (url.origin !== self.location.origin) return; // ex. polices : réseau direct
+
+  // L'API PHP (./api/...) ne doit JAMAIS être mise en cache : toujours le réseau,
+  // sinon on servirait des données périmées (tournois, session, scores…).
+  if (url.pathname.includes('/api/')) return;
 
   if (req.mode === 'navigate') {
     event.respondWith(

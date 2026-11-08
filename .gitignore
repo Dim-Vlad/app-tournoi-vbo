@@ -10,7 +10,8 @@ Thumbs.db
 node_modules/
 dist/
 
-# Secrets (ne jamais committer les clés Supabase service_role, .env, etc.)
+# Secrets — ne JAMAIS committer les identifiants de base de données
+api/config.php
 .env
 .env.*
 *.local

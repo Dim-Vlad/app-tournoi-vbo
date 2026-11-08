@@ -379,36 +379,58 @@ input,select{font-family:inherit;font-size:15px}
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,600;12..96,700;12..96,800&family=Figtree:wght@400;500;600;700;800&display=swap">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.0/dist/umd/supabase.min.js"></script>
 <script>
-/* ---------- Supabase : clés PUBLIQUES (protégées par la RLS côté serveur) ----------
-   url + clé publique du projet. On cible le schéma dédié `vbo`.
-   Si le CDN est injoignable (hors ligne, bloqué), window.sb reste null et
-   l'app retombe sur ses données de démo — elle continue de fonctionner. */
-window.SB_CONFIG = {
-  url:    "https://zadosrxichgfhelyrxdf.supabase.co",
-  key:    "sb_publishable_7BQg1sqY_V_FZpkpCHHM9Q_vibH0Z3I",
-  schema: "vbo",
-};
-try {
-  window.sb = (window.supabase && SB_CONFIG.url.startsWith("https://"))
-    ? window.supabase.createClient(SB_CONFIG.url, SB_CONFIG.key, {
-        db:   { schema: SB_CONFIG.schema },
-        auth: { persistSession: true, autoRefreshToken: true },
-      })
-    : null;
-} catch (e) { window.sb = null; console.warn("Supabase indisponible :", e); }
+/* ---------- API OVH (PHP + MySQL, même domaine) ----------
+   Tout passe par ./api/ : authentification par cookie de session, aucune
+   clé ni CORS. window.api est un petit client fetch ; window.sb reste un
+   simple drapeau « backend disponible » pour le reste du code. */
+window.API_BASE = './api/';
+window.api = (function(){
+  async function call(action, opts){
+    opts = opts || {};
+    let url = API_BASE + '?action=' + encodeURIComponent(action);
+    if(opts.query){ for(const k in opts.query){ const v=opts.query[k]; if(v!=null) url += '&'+encodeURIComponent(k)+'='+encodeURIComponent(v); } }
+    const init = { method: opts.method || (opts.body!==undefined ? 'POST' : 'GET'),
+                   headers:{}, credentials:'same-origin' };
+    if(opts.body!==undefined){ init.headers['Content-Type']='application/json'; init.body=JSON.stringify(opts.body); }
+    let res;
+    try{ res = await fetch(url, init); }
+    catch(e){ const err=new Error('Réseau indisponible'); err.network=true; throw err; }
+    let data=null; try{ data = await res.json(); }catch(_){}
+    if(!res.ok){ const err=new Error((data&&data.error)||('Erreur '+res.status)); err.status=res.status; throw err; }
+    return data;
+  }
+  return {
+    call,
+    login:          (email,password)=> call('auth.login',  {body:{email,password}}),
+    logout:         ()=>               call('auth.logout', {method:'POST'}),
+    me:             ()=>               call('auth.me'),
+    changePassword: (password)=>       call('auth.changePassword', {body:{password}}),
+    listTournaments:()=>               call('tournaments.list'),
+    saveTournament: (id,row)=>         call('tournaments.save',        {body:{id,row}}),
+    setArchived:    (id,archived)=>    call('tournaments.setArchived', {body:{id,archived}}),
+    setStatus:      (id,status,extra)=> call('tournaments.setStatus',  {body:Object.assign({id,status},extra||{})}),
+    removeTournament:(id)=>            call('tournaments.remove',      {body:{id}}),
+    saveStructure:  (tid,s)=>          call('tournaments.saveStructure',{body:{tid,s}}),
+    loadStructure:  (tid)=>            call('tournaments.loadStructure',{query:{tid}}),
+    listReferents:  ()=>               call('referents.list'),
+    createReferent: (name,email,password)=> call('referents.create',   {body:{name,email,password}}),
+    setReferentStatus:(id,status)=>    call('referents.setStatus',     {body:{id,status}}),
+    removeReferent: (id)=>             call('referents.remove',        {body:{id}}),
+  };
+})();
+// Drapeau « backend présent » : le code existant teste window.sb un peu partout.
+window.sb = { _ovh:true };
 </script>
 <script>
-/* ---------- Couche données Supabase (schéma vbo) ----------
-   Persiste les tournois dans vbo.tournaments. `config` (jsonb) porte tout le
-   paramétrage de l'app ; on y range aussi gymnases / équipes / étape du
-   brouillon (_gyms, _teams, _step) pour un aller-retour fidèle. Les colonnes
-   name / event_date / place / status / join_code / live_phase sont tenues à
-   jour en parallèle (affichage + requêtes). Repli silencieux si sb est null :
-   l'app garde alors ses données de démo. */
+/* ---------- Couche données (API OVH) ----------
+   Persiste les tournois dans la table `tournaments`. `config` (texte JSON)
+   porte tout le paramétrage de l'app ; on y range aussi gymnases / équipes /
+   étape du brouillon (_gyms, _teams, _step) pour un aller-retour fidèle. Les
+   colonnes name / event_date / place / status / join_code / live_phase sont
+   tenues à jour en parallèle (affichage + requêtes). */
 (function(){
-  if(!window.sb){ window.vboDb = null; return; }
+  if(!window.api){ window.vboDb = null; return; }
   const isUuid = (v)=> typeof v==='string'
     && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(v);
   function toISODate(d){
@@ -457,133 +479,43 @@ try {
   window.vboDb = {
     isUuid, fromRow,
     async list(){
-      const { data, error } = await sb.from('tournaments')
-        .select('*').order('created_at', { ascending:false });
-      if(error) throw error;
-      return (data||[]).map(fromRow);
+      const rows = await api.listTournaments();
+      return (rows||[]).map(fromRow);
     },
     // Enregistre : INSERT si l'id local n'est pas un uuid, sinon UPDATE.
     // Renvoie l'id définitif (uuid DB) pour réconcilier l'objet local.
     async save(t, extra){
       const row = Object.assign(toRow(t), extra||{});
-      if(isUuid(t.id)){
-        const { error } = await sb.from('tournaments').update(row).eq('id', t.id);
-        if(error) throw error;
-        return t.id;
-      }
-      try{ if(state && state.adminProfile && state.adminProfile.id) row.created_by = state.adminProfile.id; }catch(_){}
-      const { data, error } = await sb.from('tournaments').insert(row).select('id').single();
-      if(error) throw error;
-      return data.id;
+      const res = await api.saveTournament(isUuid(t.id) ? t.id : null, row);
+      return res.id;
     },
     async setArchived(id, archived){
       if(!isUuid(id)) return;
-      const { error } = await sb.from('tournaments').update({ archived }).eq('id', id);
-      if(error) throw error;
+      await api.setArchived(id, !!archived);
     },
     async setStatus(id, status, extra){
       if(!isUuid(id)) return;
-      const { error } = await sb.from('tournaments').update(Object.assign({ status }, extra||{})).eq('id', id);
-      if(error) throw error;
+      await api.setStatus(id, status, extra||{});
     },
     async remove(id){
       if(!isUuid(id)) return;
-      const { error } = await sb.from('tournaments').delete().eq('id', id);
-      if(error) throw error;
+      await api.removeTournament(id);
     },
     // Persiste la structure du tournoi (gymnases, équipes, poules, matchs de
-    // brassage) de façon idempotente : on efface l'ancienne puis on réinsère.
+    // brassage). Le serveur efface l'ancienne et réinsère tout, et fait tout
+    // le mapping des clés ; ici on ne fait que transporter `s`.
     // `s` = { gyms:[{key,name,position}], teams:[{key,name,levelW}],
     //         pools:[{letter,phase,gymKey,court,teamKeys:[]}],
     //         matches:[{round,time,phase,poolKey,gymName,court,aKey,bKey,refKey}] }
     async saveStructure(tid, s){
-      if(!isUuid(tid)) throw new Error('Tournoi non encore persisté.');
-      // Effacement (l'ordre respecte les clés étrangères ; pool_teams cascade).
-      for(const tbl of ['matches','pools','teams','gyms']){
-        const { error } = await sb.from(tbl).delete().eq('tournament_id', tid);
-        if(error) throw error;
-      }
-      // Gymnases
-      const gymKeyToId = {}, nameToGymId = {};
-      if(s.gyms.length){
-        const rows = s.gyms.map(g=>({ tournament_id:tid, name:g.name, position:g.position }));
-        const { data, error } = await sb.from('gyms').insert(rows).select('id,name,position');
-        if(error) throw error;
-        s.gyms.forEach(g=>{
-          const hit=(data||[]).find(r=>r.name===g.name && r.position===g.position);
-          if(hit){ gymKeyToId[g.key]=hit.id; nameToGymId[g.name]=hit.id; }
-        });
-      }
-      // Équipes
-      const teamNameToId = {};
-      if(s.teams.length){
-        const rows = s.teams.map(t=>({ tournament_id:tid, name:t.name, level:t.levelW }));
-        const { data, error } = await sb.from('teams').insert(rows).select('id,name');
-        if(error) throw error;
-        (data||[]).forEach(r=>{ teamNameToId[r.name]=r.id; });
-      }
-      // Poules
-      const poolLetterToId = {};
-      if(s.pools.length){
-        const rows = s.pools.map(p=>({ tournament_id:tid, letter:p.letter, phase:p.phase||'brassage',
-          gym_id: gymKeyToId[p.gymKey]||null, court: p.court!=null?p.court:null }));
-        const { data, error } = await sb.from('pools').insert(rows).select('id,letter');
-        if(error) throw error;
-        (data||[]).forEach(r=>{ poolLetterToId[r.letter]=r.id; });
-      }
-      // Appartenances équipe ↔ poule
-      const ptRows = [];
-      s.pools.forEach(p=>{ (p.teamKeys||[]).forEach((nm,seed)=>{
-        const pid=poolLetterToId[p.letter], teid=teamNameToId[nm];
-        if(pid&&teid) ptRows.push({ pool_id:pid, team_id:teid, seed });
-      }); });
-      if(ptRows.length){ const { error } = await sb.from('pool_teams').insert(ptRows); if(error) throw error; }
-      // Matchs
-      const mRows = (s.matches||[]).map(m=>({
-        tournament_id:tid, pool_id: poolLetterToId[m.poolKey]||null, phase:m.phase||'brassage',
-        round:m.round, scheduled_time:m.time, gym_id: nameToGymId[m.gymName]||null, court: m.court!=null?m.court:null,
-        team_a: teamNameToId[m.aKey]||null, team_b: teamNameToId[m.bKey]||null,
-        referee_team: m.refKey?(teamNameToId[m.refKey]||null):null, status:'todo',
-      }));
-      if(mRows.length){ const { error } = await sb.from('matches').insert(mRows); if(error) throw error; }
-      return { gyms:s.gyms.length, teams:s.teams.length, pools:s.pools.length, matches:mRows.length };
+      if(!isUuid(tid)) throw new Error('Tournoi non encore enregistré.');
+      return await api.saveStructure(tid, s);
     },
-    // Relit la structure persistée et la renvoie dans les formes attendues par
-    // l'app (state.pools / state.schedule). Renvoie null si rien n'est persisté.
+    // Relit la structure persistée ; le serveur renvoie déjà les formes
+    // attendues par l'app ({ pools, schedule }), ou null si rien n'est persisté.
     async loadStructure(tid){
       if(!isUuid(tid)) return null;
-      const W2ID = {4:'nat',3:'reg',2:'dep',1:'jeu'};
-      const q = (tbl)=> sb.from(tbl).select('*').eq('tournament_id', tid);
-      const [{ data:gyms }, { data:teams }, { data:pools }, { data:matches }] = await Promise.all([
-        q('gyms'), q('teams'), q('pools'), q('matches'),
-      ]);
-      if(!matches || !matches.length) return null;
-      const poolIds = (pools||[]).map(p=>p.id);
-      let pteams = [];
-      if(poolIds.length){
-        const { data } = await sb.from('pool_teams').select('*').in('pool_id', poolIds);
-        pteams = data||[];
-      }
-      const gymById = {}; (gyms||[]).forEach(g=>{ gymById[g.id]=g.name; });
-      const teamById = {}; (teams||[]).forEach(t=>{ teamById[t.id]={ name:t.name, level:W2ID[t.level]||'dep' }; });
-      const poolById = {}; (pools||[]).forEach(p=>{ poolById[p.id]=p; });
-      // Poules
-      const poolsOut = (pools||[]).slice().sort((a,b)=> (a.letter>b.letter?1:-1)).map(p=>{
-        const members = pteams.filter(x=>x.pool_id===p.id).sort((a,b)=>(a.seed||0)-(b.seed||0));
-        return { letter:p.letter, gym: gymById[p.gym_id]||'', court:p.court,
-          teams: members.map(m=> teamById[m.team_id] ? { t:teamById[m.team_id].name, level:teamById[m.team_id].level } : null).filter(Boolean) };
-      });
-      // Planning (schedule)
-      const S = { valid:'done', live:'live', pending:'live', todo:'upcoming' };
-      const schedOut = (matches||[]).slice().sort((a,b)=> (a.round-b.round) || String(a.scheduled_time).localeCompare(String(b.scheduled_time))).map(m=>({
-        r:m.round, time:m.scheduled_time, gym: gymById[m.gym_id]||'', court:m.court,
-        pool: poolById[m.pool_id]?poolById[m.pool_id].letter:'',
-        a: teamById[m.team_a]?teamById[m.team_a].name:'', b: teamById[m.team_b]?teamById[m.team_b].name:'',
-        ref: teamById[m.referee_team]?teamById[m.referee_team].name:'',
-        sa: m.score_a!=null?m.score_a:undefined, sb: m.score_b!=null?m.score_b:undefined,
-        sets: m.sets||null, status: S[m.status]||'upcoming',
-      }));
-      return { pools:poolsOut, schedule:schedOut };
+      return await api.loadStructure(tid);
     },
   };
 })();
@@ -1179,30 +1111,28 @@ screens.login = ()=>{
     </div>
     ${installBlock('full')}`;
 };
-// Connexion organisateur : Supabase Auth → vérifie le rôle admin.
-// Repli démo si Supabase est indisponible (window.sb null).
+// Connexion organisateur : API OVH → vérifie le rôle admin.
 window.orgSignIn = async ()=>{
   const mail=(document.getElementById('org_mail')?.value||'').trim().toLowerCase();
   const pass=(document.getElementById('org_pass')?.value||'').trim();
-  if(!window.sb){ state.authed=true; go('dashboard'); return; } // mode démo hors-ligne
   if(!mail || !pass){ toast('E-mail et mot de passe requis'); return; }
   const btn=document.getElementById('org_submit'); if(btn){ btn.disabled=true; btn.textContent='Connexion…'; }
   const restore=()=>{ if(btn){ btn.disabled=false; btn.textContent='Se connecter'; } };
   try {
-    const { data, error } = await sb.auth.signInWithPassword({ email: mail, password: pass });
-    if(error){ toast(error.message==='Invalid login credentials'?'Identifiants incorrects':error.message); restore(); return; }
-    // Vérifie le profil + rôle admin.
-    const { data: prof } = await sb.from('profiles').select('role,status,full_name').eq('id', data.user.id).maybeSingle();
-    if(!prof || prof.role!=='admin'){ await sb.auth.signOut(); toast('Ce compte n\'est pas administrateur'); restore(); return; }
-    if(prof.status!=='active'){ await sb.auth.signOut(); toast('Compte suspendu'); restore(); return; }
-    state.authed=true; state.adminProfile={ id:data.user.id, name:prof.full_name, email:mail };
+    const res = await api.login(mail, pass);
+    const u = res && res.user;
+    if(!u || u.role!=='admin'){ try{ await api.logout(); }catch(_){}; toast('Ce compte n\'est pas administrateur'); restore(); return; }
+    state.authed=true; state.adminProfile={ id:u.id, name:u.name, email:u.email };
     go('dashboard');
-  } catch(e){ toast('Connexion impossible — réessayez'); console.error(e); restore(); }
+  } catch(e){
+    toast(e.status===401 ? 'Identifiants incorrects' : (e.message||'Connexion impossible — réessayez'));
+    console.error(e); restore();
+  }
 };
 
-// Déconnexion : coupe la session Supabase (si présente) et vide l'état local.
+// Déconnexion : coupe la session serveur et vide l'état local.
 window.vboSignOut = (which)=>{
-  try { if(window.sb) sb.auth.signOut(); } catch(e){}
+  try { api.logout(); } catch(e){}
   if(which==='refSession'){ state.refSession=null; state.refProfile=null; }
   else { state.authed=false; state.adminProfile=null; state._tournLoaded=false; state._refsLoaded=false; }
 };
@@ -1255,21 +1185,17 @@ function tournSection(title,list){
   if(!list.length) return '';
   return `<p class="eyebrow" style="margin:16px 0 8px">${title}</p>${list.map(tournCard).join('')}`;
 }
-// Recharge la liste des tournois depuis Supabase (remplace les données de démo).
+// Recharge la liste des tournois depuis l'API OVH (remplace les données de démo).
 async function refreshTournaments(){
   if(!window.vboDb) return;
   try{ state.tournaments = await vboDb.list(); state._tournLoaded=true; }
   catch(e){ console.warn('Chargement tournois:', e); state._tournLoaded=true; toast('⚠️ Chargement cloud échoué'); }
 }
 window.refreshTournaments = refreshTournaments;
-// Recharge la liste des référents depuis vbo.profiles (role = referent).
+// Recharge la liste des référents depuis l'API (users, role = referent).
 async function refreshReferents(){
-  if(!window.sb) return;
   try{
-    const { data, error } = await sb.from('profiles')
-      .select('id,full_name,email,status,created_at')
-      .eq('role','referent').order('created_at',{ ascending:true });
-    if(error) throw error;
+    const data = await api.listReferents();
     state.referents = (data||[]).map(p=>({
       id:p.id, name:p.full_name||'(sans nom)', email:p.email||'', password:null,
       status:p.status||'active', createdAt:p.created_at?Date.parse(p.created_at):Date.now(), invited:true,
@@ -1280,7 +1206,7 @@ async function refreshReferents(){
 window.refreshReferents = refreshReferents;
 screens.dashboard = ()=>{
   setTop(null); tabbar.hidden=true;
-  // Premier affichage avec Supabase : on charge depuis la base puis on ré-affiche.
+  // Premier affichage avec l'API : on charge depuis la base puis on ré-affiche.
   if(window.vboDb && !state._tournLoaded){
     refreshTournaments().then(()=>{ const cur=navStack[navStack.length-1]; if(cur && cur.screen==='dashboard') screens.dashboard(); });
     host.innerHTML = `<div class="screen" style="padding:0">
@@ -2569,10 +2495,8 @@ window.toggleProfilePwd=(btn)=>{
 window.toggleRefSuspend=async (id)=>{
   const r=state.referents.find(x=>x.id===id); if(!r) return;
   const next = r.status==='suspended' ? 'active' : 'suspended';
-  if(window.sb){
-    const { error } = await sb.from('profiles').update({ status: next }).eq('id', id);
-    if(error){ toast('Mise à jour impossible — réessayez'); console.error(error); return; }
-  }
+  try{ await api.setReferentStatus(id, next); }
+  catch(e){ toast('Mise à jour impossible — réessayez'); console.error(e); return; }
   r.status = next;
   toast(next==='suspended'?'Compte suspendu':'Compte réactivé');
   render('refProfile',{id});
@@ -2585,11 +2509,9 @@ window.confirmDeleteRef=(id)=>{
     <button class="btn ghost" style="width:100%;margin-top:10px" onclick="closeSheet()">Annuler</button>`);
 };
 window.doDeleteRef=async (id)=>{
-  if(window.sb){
-    // Supprime le profil VBO → l'accès à l'app est révoqué (plus de rôle référent).
-    const { error } = await sb.from('profiles').delete().eq('id', id);
-    if(error){ toast('Suppression impossible — réessayez'); console.error(error); return; }
-  }
+  // Supprime le compte → l'accès à l'app est révoqué.
+  try{ await api.removeReferent(id); }
+  catch(e){ toast('Suppression impossible — réessayez'); console.error(e); return; }
   const i=state.referents.findIndex(x=>x.id===id);
   if(i>=0) state.referents.splice(i,1);
   closeSheet(); toast('Référent supprimé');
@@ -2641,24 +2563,20 @@ window.submitReferent=async ()=>{
   const btn=document.getElementById('rf_submit');
   // Le référent de base : on affiche TOUJOURS le message récapitulatif ensuite,
   // que la création serveur réussisse ou non (le but : pouvoir copier le texte).
-  const r={id:'r'+Date.now(), name, email, password:pass, createdAt:Date.now(), status:'active', demo:!window.sb, accountOk:false, accountError:''};
-  // Repli démo : pas de Supabase → aperçu local.
-  if(!window.sb){ lastRef=r; go('refMail'); return; }
-  // Supabase : on tente de créer le compte, sans jamais bloquer l'affichage du message.
+  const r={id:'r'+Date.now(), name, email, password:pass, createdAt:Date.now(), status:'active', demo:false, accountOk:false, accountError:''};
+  // On tente de créer le compte via l'API, sans jamais bloquer l'affichage du
+  // message récapitulatif (qui reste copiable même en cas d'échec serveur).
   if(btn){ btn.disabled=true; btn.textContent='Création en cours…'; }
   try{
-    const { data, error } = await sb.functions.invoke('create-referent', { body:{ name, email, password:pass } });
-    if(!error && data && data.ok){
-      r.id = (data.id)||r.id; r.accountOk=true; state.referents.push(r); state._refsLoaded=false;
+    const data = await api.createReferent(name, email, pass);
+    if(data && data.ok){
+      r.id = data.id||r.id; r.accountOk=true; state.referents.push(r); state._refsLoaded=false;
     } else {
-      // Échec serveur : on garde le message copiable, on note juste l'erreur.
-      let msg='';
-      try{ const body=await error?.context?.json?.(); if(body&&body.error) msg=body.error; }catch(_){}
-      if(!msg && data && data.error) msg=data.error;
-      r.accountOk=false; r.accountError=msg||'';
+      r.accountOk=false; r.accountError=(data&&data.error)||'';
     }
   }catch(e){
-    console.error(e); r.accountOk=false; r.accountError='Connexion au serveur impossible';
+    console.error(e); r.accountOk=false;
+    r.accountError = e.network ? 'Connexion au serveur impossible' : (e.message||'');
   }
   if(btn){ btn.disabled=false; btn.textContent='Créer le compte'; }
   lastRef=r; go('refMail');
@@ -2742,24 +2660,20 @@ screens.refLogin = ()=>{
 window.refSignIn=async ()=>{
   const mail=(document.getElementById('rl_mail').value||'').trim().toLowerCase();
   const pass=(document.getElementById('rl_pass').value||'').trim();
-  // Repli démo : identifiants pré-remplis du prototype (ou Supabase indisponible).
-  const demo=state.referents.find(x=>x.email.toLowerCase()===mail && x.password===pass);
-  if(!window.sb || demo){
-    if(!demo){ toast('Identifiants incorrects'); return; }
-    if(demo.status==='suspended'){ toast('⏸️ Ce compte est suspendu — contactez l\'organisation'); return; }
-    state.refProfile=null; state.refSession=demo.id; go('refSpace'); return;
-  }
-  // Supabase Auth réel → vérifie le rôle référent.
   if(!mail || !pass){ toast('E-mail et mot de passe requis'); return; }
+  // API OVH → vérifie le rôle référent.
   try {
-    const { data, error } = await sb.auth.signInWithPassword({ email: mail, password: pass });
-    if(error){ toast(error.message==='Invalid login credentials'?'Identifiants incorrects':error.message); return; }
-    const { data: prof } = await sb.from('profiles').select('role,status,full_name').eq('id', data.user.id).maybeSingle();
-    if(!prof || prof.role!=='referent'){ await sb.auth.signOut(); toast('Ce compte n\'est pas un référent'); return; }
-    if(prof.status!=='active'){ await sb.auth.signOut(); toast('⏸️ Ce compte est suspendu — contactez l\'organisation'); return; }
-    state.refProfile={ id:data.user.id, name:prof.full_name, email:mail };
-    state.refSession='sb'; go('refSpace');
-  } catch(e){ toast('Connexion impossible — réessayez'); console.error(e); }
+    const res = await api.login(mail, pass);
+    const u = res && res.user;
+    if(!u || u.role!=='referent'){ try{ await api.logout(); }catch(_){}; toast('Ce compte n\'est pas un référent'); return; }
+    state.refProfile={ id:u.id, name:u.name, email:u.email };
+    state.refSession='ovh'; go('refSpace');
+  } catch(e){
+    toast(e.status===401 ? 'Identifiants incorrects'
+      : (e.status===403 ? (e.message||'⏸️ Ce compte est suspendu — contactez l\'organisation')
+      : (e.message||'Connexion impossible — réessayez')));
+    console.error(e);
+  }
 };
 
 screens.refSpace = ()=>{
@@ -2981,27 +2895,19 @@ window.submitNewPassword=async ()=>{
   const p2=(document.getElementById('sp_pass2').value||'').trim();
   if(p1.length<6){ toast('Mot de passe trop court (6 caractères min.)'); return; }
   if(p1!==p2){ toast('Les mots de passe ne correspondent pas'); return; }
-  if(!window.sb){ toast('Connexion requise'); return; }
   const btn=document.getElementById('sp_submit');
   if(btn){ btn.disabled=true; btn.textContent='Enregistrement…'; }
   try{
-    const { data, error } = await sb.auth.updateUser({ password: p1 });
-    if(error){
-      toast(/session|logged|JWT|expired/i.test(error.message||'')
-        ? 'Lien expiré — demandez une nouvelle invitation' : error.message);
-      if(btn){ btn.disabled=false; btn.textContent='Enregistrer et continuer'; } return;
-    }
-    const uid=data.user.id;
-    const { data: prof } = await sb.from('profiles').select('role,status,full_name').eq('id',uid).maybeSingle();
+    await api.changePassword(p1);
     try{ history.replaceState(null,'',location.pathname); }catch(_){}
     state.inviteFlow=null;
-    if(prof && prof.role==='referent'){
-      if(prof.status!=='active'){ await sb.auth.signOut(); toast('⏸️ Ce compte est suspendu — contactez l\'organisation'); go('home'); return; }
-      state.refProfile={ id:uid, name:prof.full_name, email:data.user.email }; state.refSession='sb';
-      toast('Mot de passe enregistré ✓'); go('refSpace'); return;
-    }
-    toast('Mot de passe enregistré ✓'); go('home');
-  }catch(e){ console.error(e); toast('Échec — réessayez'); if(btn){ btn.disabled=false; btn.textContent='Enregistrer et continuer'; } }
+    toast('Mot de passe enregistré ✓');
+    go(state.refSession ? 'refSpace' : 'home');
+  }catch(e){
+    console.error(e);
+    toast(e.status===401 ? 'Connexion requise — reconnectez-vous' : (e.message||'Échec — réessayez'));
+    if(btn){ btn.disabled=false; btn.textContent='Enregistrer et continuer'; }
+  }
 };
 
 /* ---------- Render dispatch ---------- */
@@ -3013,17 +2919,6 @@ function render(screen,opts){
   try{ window.scrollTo(0,0); }catch(_){}
 }
 (function boot(){
-  const urlStr=(location.hash||'')+' '+(location.search||'');
-  // Lien d'invitation / réinitialisation reçu par e-mail → écran « choisir mon mot de passe ».
-  if(window.sb && /type=(invite|recovery|signup)/.test(urlStr)){
-    state.inviteFlow = /type=recovery/.test(urlStr) ? 'recovery' : 'invite';
-    // Supabase (detectSessionInUrl) établit la session depuis l'URL de façon asynchrone.
-    sb.auth.onAuthStateChange((event)=>{
-      if(event==='PASSWORD_RECOVERY'){ state.inviteFlow='recovery'; }
-    });
-    go('setPassword');
-    return;
-  }
   const code=readJoinCodeFromUrl();
   if(code){ state.joinCode=code; go('scan'); toast('Code détecté : '+code); return; }
   go('home');

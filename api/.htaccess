@@ -1,0 +1,19 @@
+# API Tournoi VBO — protection des fichiers sensibles.
+# Empêche de télécharger la config et le schéma via le navigateur.
+# (Les .php sont de toute façon exécutés, jamais affichés ; ceci couvre
+#  les cas où PHP serait désactivé et renverrait le code source brut.)
+
+<FilesMatch "\.(sql|md|example\.php)$">
+  Require all denied
+</FilesMatch>
+
+<Files "config.php">
+  Require all denied
+</Files>
+
+<Files "_bootstrap.php">
+  Require all denied
+</Files>
+
+# Pas de listing du dossier /api
+Options -Indexes

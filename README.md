@@ -17,7 +17,8 @@ Application mobile (PWA) de gestion des tournois du **Volley-Ball Ollioulais** :
 │   ├── icon-maskable-512.png← icône « maskable » (Android adaptatif)
 │   └── apple-touch-icon.png ← icône 180×180 (iOS, écran d'accueil)
 ├── prototype.html           ← version de travail (prototype, données fictives)
-└── supabase/                ← schéma de base de données (voir supabase/README.md)
+├── api/                     ← backend PHP + MySQL pour OVH (voir api/README.md)
+└── supabase/                ← ancien backend Supabase (abandonné, peut être supprimé)
 ```
 
 > `prototype.html` est la version d'itération (avec données fictives) ; `index.html` en est la copie prête à déployer, avec le câblage PWA ajouté (manifest, service worker, logo pointant vers `assets/`). Quand le prototype évolue, régénérer `index.html` à partir de lui.
@@ -50,4 +51,11 @@ Le service worker met en cache la coquille de l'app. Après un changement, incr�
 
 ## Backend
 
-Le schéma de base de données (Supabase) est dans [`supabase/`](supabase/README.md) : comptes admin + référents, capitaines sans compte (code/QR), sécurité par rôle et temps réel. À brancher dans un second temps.
+Le backend est en **PHP + MySQL**, hébergé sur le **même domaine** que l'app (chez
+OVH, à côté du site du club) : comptes admin + référents, tournois et structure
+(gymnases/équipes/poules/matchs). Même origine → authentification par **cookie de
+session**, sans clé d'API ni CORS. Installation et référence des actions dans
+[`api/README.md`](api/README.md).
+
+> Le dossier `supabase/` correspond à l'ancienne approche (Supabase), abandonnée au
+> profit d'OVH ; il peut être supprimé.
