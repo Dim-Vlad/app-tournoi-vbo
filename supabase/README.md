@@ -2,6 +2,8 @@
 
 Schéma de base de données pour l'application de gestion de tournois du **Volley-Ball Ollioulais**.
 
+> 🧩 **Cohabitation.** Tout l'applicatif VBO vit dans un **schéma dédié `vbo`** (pas `public`). On peut donc l'installer dans un projet Supabase **déjà utilisé** (ex. le portfolio) sans aucun conflit avec ses tables, et sans que ses comptes de connexion obtiennent le moindre accès aux données VBO (voir « Isolation » plus bas).
+
 ## Modèle de comptes
 
 | Rôle | Compte ? | Accès |
@@ -12,60 +14,75 @@ Schéma de base de données pour l'application de gestion de tournois du **Volle
 
 > Le modèle « compte de gymnase partagé » reste possible : c'est simplement un profil référent dont plusieurs personnes connaissent le mot de passe. Le schéma gère des référents individuels (recommandé), ce qui n'empêche pas d'en partager un.
 
+## Isolation vis-à-vis des autres comptes du projet
+
+Le projet Supabase réutilisé (portfolio) a ses propres comptes Auth (ta connexion d'admin). Deux garde-fous les tiennent à l'écart de VBO :
+
+1. **Schéma séparé `vbo`** → les tables du portfolio (dans `public`) ne sont jamais touchées, et aucun conflit de noms même en cas de table homonyme.
+2. **Déclencheur prudent** → le trigger `vbo.handle_new_user` ne crée un profil VBO **que** pour les comptes dont le `user_metadata` contient `{ "app": "vbo" }`. Un compte créé par le portfolio n'a donc **aucun** profil VBO → **aucun** accès aux tables `vbo.*` via la RLS. Le trigger porte un nom propre (`on_auth_user_created_vbo`) et ne remplace pas un éventuel trigger d'inscription existant.
+
 ## Contenu
 
 ```
 supabase/
 ├── migrations/
-│   └── 0001_init.sql   ← types, tables, RLS, fonctions capitaines, realtime
+│   └── 0001_init.sql   ← schéma vbo : types, tables, RLS, RPC capitaines, realtime
 └── README.md
 ```
 
-## Tables
+## Tables (schéma `vbo`)
 
 | Table | Rôle |
 |-------|------|
-| `profiles` | 1 ligne par utilisateur Auth (admin / référent). Alimentée par trigger. |
-| `tournaments` | Un tournoi. `config` (jsonb) = tout le paramétrage de l'app. `join_code` pour les capitaines. |
-| `gyms` | Gymnases d'un tournoi. |
-| `teams` | Équipes. |
-| `pools` | Poules (par phase + gymnase/terrain). |
-| `pool_teams` | Appartenance équipe ↔ poule. |
-| `matches` | Matchs : horaire, terrain, équipes, arbitre, statut, score. |
-| `score_entries` | Double saisie des capitaines (validation croisée). |
+| `vbo.profiles` | 1 ligne par utilisateur VBO (admin / référent). Alimentée par trigger (comptes VBO uniquement). |
+| `vbo.tournaments` | Un tournoi. `config` (jsonb) = tout le paramétrage de l'app. `join_code` pour les capitaines. |
+| `vbo.gyms` | Gymnases d'un tournoi. |
+| `vbo.teams` | Équipes. |
+| `vbo.pools` | Poules (par phase + gymnase/terrain). |
+| `vbo.pool_teams` | Appartenance équipe ↔ poule. |
+| `vbo.matches` | Matchs : horaire, terrain, équipes, arbitre, statut, score. |
+| `vbo.score_entries` | Double saisie des capitaines (validation croisée). |
 
 ## Sécurité (Row-Level Security)
 
-- **Admin** : accès total à tout (`is_admin()`).
-- **Référent** : lecture de tout + mise à jour des `matches` (saisie sur place).
+- **Admin** : accès total à tout (`vbo.is_admin()`).
+- **Référent** : lecture de tout + mise à jour des `vbo.matches` (saisie sur place).
 - **Capitaine (anon)** : aucune table exposée directement. Passe **uniquement** par ces fonctions, qui valident le `join_code` côté serveur :
   - `join_tournament(code)` → infos du tournoi (si live).
   - `tournament_teams(code)` → liste des équipes.
   - `team_matches(code, team_id)` → matchs de l'équipe.
   - `submit_score(code, match_id, team_id, score_a, score_b, sets)` → enregistre la saisie ; le match passe en `valid` quand les **deux** équipes saisissent le même résultat, sinon `pending`.
 
-Les helpers `current_role()` / `is_admin()` / `is_staff()` sont en `SECURITY DEFINER` pour éviter la récursion RLS sur `profiles`.
+Les helpers `vbo.app_role()` / `vbo.is_admin()` / `vbo.is_staff()` sont en `SECURITY DEFINER` pour éviter la récursion RLS sur `vbo.profiles`.
 
-## Mise en place
+## Mise en place (dans le projet existant — ex. portfolio)
 
-1. Créer un projet sur [supabase.com](https://supabase.com).
-2. **SQL Editor** → coller `migrations/0001_init.sql` → Run.
+1. **SQL Editor** → coller `migrations/0001_init.sql` → **Run**.
    *(ou, avec la CLI : `supabase db push`)*
-3. Créer le compte **admin** :
+2. **Exposer le schéma à l'API** (sinon l'app ne verra pas `vbo`) :
+   **Project Settings → API → Exposed schemas** → ajouter **`vbo`** (garder `public`), puis **Save**.
+3. Créer le compte **admin** VBO :
    - **Authentication → Users → Add user** (e-mail + mot de passe).
-   - Dans **SQL Editor**, passer son rôle en admin :
+   - Le trigger ne s'applique qu'aux comptes `app='vbo'`, donc fixer le profil admin manuellement dans **SQL Editor** :
      ```sql
-     update public.profiles set role = 'admin'
-     where email = 'admin@exemple.fr';
+     insert into vbo.profiles (id, email, full_name, role, status)
+     select id, email, 'Admin VBO', 'admin', 'active'
+     from auth.users where email = 'admin@exemple.fr'
+     on conflict (id) do update set role = 'admin', status = 'active';
      ```
-4. Créer les comptes **référents** : depuis l'app (admin), via l'API admin Supabase (`auth.admin.createUser`) en passant `user_metadata = { full_name, role: 'referent' }` — le trigger `handle_new_user` crée le profil automatiquement.
+   > Variante : réutiliser **ton compte portfolio existant** comme admin VBO — même requête, avec son e-mail. Un seul login pour tout. (Sinon, un compte dédié garde les deux apps bien séparées.)
+4. Créer les comptes **référents** : depuis l'app (admin), via l'API admin Supabase (`auth.admin.createUser`) en passant
+   `user_metadata = { app: 'vbo', full_name, role: 'referent' }` — le trigger `vbo.handle_new_user` crée alors le profil automatiquement. **Le `app: 'vbo'` est indispensable** : sans lui, aucun profil n'est créé.
 
 ## Côté application (prochaine étape)
 
 Brancher le `state` fictif du prototype sur Supabase :
-- `supabase-js` avec l'**URL** + la clé **anon** du projet.
+- `supabase-js` avec l'**URL** + la clé **anon** du projet, en ciblant le schéma `vbo` :
+  ```js
+  const supabase = createClient(URL, ANON, { db: { schema: 'vbo' } });
+  ```
 - Admin / référent : `supabase.auth.signInWithPassword(...)`.
-- Capitaine : pas d'auth, appels `supabase.rpc('join_tournament', { p_code })`, etc.
-- Direct : `supabase.channel(...).on('postgres_changes', ...)` sur `matches` / `pools` / `teams` / `tournaments` pour les scores et le classement en temps réel.
+- Capitaine : pas d'auth, appels `supabase.rpc('join_tournament', { p_code })`, etc. (le client est déjà sur le schéma `vbo`).
+- Direct : `supabase.channel(...).on('postgres_changes', { schema: 'vbo', table: 'matches', ... })` sur `matches` / `pools` / `teams` / `tournaments` pour les scores et le classement en temps réel.
 
 > ⚠️ Ne jamais exposer la clé **service_role** dans l'app front : seulement l'URL et la clé **anon** (publique, protégée par la RLS ci-dessus).

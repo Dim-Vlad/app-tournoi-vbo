@@ -363,6 +363,26 @@ input,select{font-family:inherit;font-size:15px}
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,600;12..96,700;12..96,800&family=Figtree:wght@400;500;600;700;800&display=swap">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.0/dist/umd/supabase.min.js"></script>
+<script>
+/* ---------- Supabase : clés PUBLIQUES (protégées par la RLS côté serveur) ----------
+   url + clé publique du projet. On cible le schéma dédié `vbo`.
+   Si le CDN est injoignable (hors ligne, bloqué), window.sb reste null et
+   l'app retombe sur ses données de démo — elle continue de fonctionner. */
+window.SB_CONFIG = {
+  url:    "https://zadosrxichgfhelyrxdf.supabase.co",
+  key:    "sb_publishable_7BQg1sqY_V_FZpkpCHHM9Q_vibH0Z3I",
+  schema: "vbo",
+};
+try {
+  window.sb = (window.supabase && SB_CONFIG.url.startsWith("https://"))
+    ? window.supabase.createClient(SB_CONFIG.url, SB_CONFIG.key, {
+        db:   { schema: SB_CONFIG.schema },
+        auth: { persistSession: true, autoRefreshToken: true },
+      })
+    : null;
+} catch (e) { window.sb = null; console.warn("Supabase indisponible :", e); }
+</script>
 
 <div class="app" id="app">
   <!-- TOP BAR -->
@@ -931,12 +951,39 @@ screens.login = ()=>{
     <div class="card">
       <h3 style="font-size:19px">Bon retour 👋</h3>
       <p class="lead">Connectez-vous pour gérer vos tournois.</p>
-      <label class="field"><span>E-mail</span><input type="email" value="orga@volley-ollioules.fr" autocomplete="off"></label>
-      ${pwdField('Mot de passe','org_pass','motdepasse')}
-      <button class="btn" style="margin-top:18px" onclick="state.authed=true; go('dashboard')">Se connecter</button>
-      <button class="btn ghost" style="margin-top:10px" onclick="toast('Démo : utilisez le compte pré-rempli')">Mot de passe oublié ?</button>
+      <label class="field"><span>E-mail</span><input id="org_mail" type="email" placeholder="admin@exemple.fr" autocomplete="username" value=""></label>
+      ${pwdField('Mot de passe','org_pass','')}
+      <button class="btn" id="org_submit" style="margin-top:18px" onclick="orgSignIn()">Se connecter</button>
+      <button class="btn ghost" style="margin-top:10px" onclick="toast('Contactez l\\'administrateur pour réinitialiser le mot de passe')">Mot de passe oublié ?</button>
     </div>
     ${installBlock('full')}`;
+};
+// Connexion organisateur : Supabase Auth → vérifie le rôle admin.
+// Repli démo si Supabase est indisponible (window.sb null).
+window.orgSignIn = async ()=>{
+  const mail=(document.getElementById('org_mail')?.value||'').trim().toLowerCase();
+  const pass=(document.getElementById('org_pass')?.value||'').trim();
+  if(!window.sb){ state.authed=true; go('dashboard'); return; } // mode démo hors-ligne
+  if(!mail || !pass){ toast('E-mail et mot de passe requis'); return; }
+  const btn=document.getElementById('org_submit'); if(btn){ btn.disabled=true; btn.textContent='Connexion…'; }
+  const restore=()=>{ if(btn){ btn.disabled=false; btn.textContent='Se connecter'; } };
+  try {
+    const { data, error } = await sb.auth.signInWithPassword({ email: mail, password: pass });
+    if(error){ toast(error.message==='Invalid login credentials'?'Identifiants incorrects':error.message); restore(); return; }
+    // Vérifie le profil + rôle admin.
+    const { data: prof } = await sb.from('profiles').select('role,status,full_name').eq('id', data.user.id).maybeSingle();
+    if(!prof || prof.role!=='admin'){ await sb.auth.signOut(); toast('Ce compte n\'est pas administrateur'); restore(); return; }
+    if(prof.status!=='active'){ await sb.auth.signOut(); toast('Compte suspendu'); restore(); return; }
+    state.authed=true; state.adminProfile={ id:data.user.id, name:prof.full_name, email:mail };
+    go('dashboard');
+  } catch(e){ toast('Connexion impossible — réessayez'); console.error(e); restore(); }
+};
+
+// Déconnexion : coupe la session Supabase (si présente) et vide l'état local.
+window.vboSignOut = (which)=>{
+  try { if(window.sb) sb.auth.signOut(); } catch(e){}
+  if(which==='refSession'){ state.refSession=null; state.refProfile=null; }
+  else { state.authed=false; state.adminProfile=null; }
 };
 
 const TOURN_ST={
@@ -1008,10 +1055,10 @@ screens.dashboard = ()=>{
     <div class="screen" style="padding:0">
       <div style="display:flex;align-items:center;gap:10px;margin-bottom:16px">
         <div class="logo">${logoMark()} ${APP_NAME}</div>
-        <button class="btn ghost sm" style="margin-left:auto" onclick="go('home')">Quitter</button>
+        <button class="btn ghost sm" style="margin-left:auto" onclick="vboSignOut('authed');go('home')">Quitter</button>
       </div>
       <p class="eyebrow">Mes tournois</p>
-      <h3 style="font-size:22px;margin:4px 0 14px">Bonjour, organisateur</h3>
+      <h3 style="font-size:22px;margin:4px 0 14px">Bonjour, ${(state.adminProfile&&state.adminProfile.name)||'organisateur'}</h3>
       <div class="seg" style="margin-bottom:6px">
         <button class="${view==='active'?'on':''}" onclick="setDashView('active')">Actifs</button>
         <button class="${view==='archived'?'on':''}" onclick="setDashView('archived')">Archivés${archived.length?` (${archived.length})`:''}</button>
@@ -2329,18 +2376,32 @@ screens.refLogin = ()=>{
   </div>
   ${installBlock('full')}`;
 };
-window.refSignIn=()=>{
+window.refSignIn=async ()=>{
   const mail=(document.getElementById('rl_mail').value||'').trim().toLowerCase();
   const pass=(document.getElementById('rl_pass').value||'').trim();
-  const r=state.referents.find(x=>x.email.toLowerCase()===mail && x.password===pass);
-  if(!r){ toast('Identifiants incorrects'); return; }
-  if(r.status==='suspended'){ toast('⏸️ Ce compte est suspendu — contactez l\'organisation'); return; }
-  state.refSession=r.id; go('refSpace');
+  // Repli démo : identifiants pré-remplis du prototype (ou Supabase indisponible).
+  const demo=state.referents.find(x=>x.email.toLowerCase()===mail && x.password===pass);
+  if(!window.sb || demo){
+    if(!demo){ toast('Identifiants incorrects'); return; }
+    if(demo.status==='suspended'){ toast('⏸️ Ce compte est suspendu — contactez l\'organisation'); return; }
+    state.refProfile=null; state.refSession=demo.id; go('refSpace'); return;
+  }
+  // Supabase Auth réel → vérifie le rôle référent.
+  if(!mail || !pass){ toast('E-mail et mot de passe requis'); return; }
+  try {
+    const { data, error } = await sb.auth.signInWithPassword({ email: mail, password: pass });
+    if(error){ toast(error.message==='Invalid login credentials'?'Identifiants incorrects':error.message); return; }
+    const { data: prof } = await sb.from('profiles').select('role,status,full_name').eq('id', data.user.id).maybeSingle();
+    if(!prof || prof.role!=='referent'){ await sb.auth.signOut(); toast('Ce compte n\'est pas un référent'); return; }
+    if(prof.status!=='active'){ await sb.auth.signOut(); toast('⏸️ Ce compte est suspendu — contactez l\'organisation'); return; }
+    state.refProfile={ id:data.user.id, name:prof.full_name, email:mail };
+    state.refSession='sb'; go('refSpace');
+  } catch(e){ toast('Connexion impossible — réessayez'); console.error(e); }
 };
 
 screens.refSpace = ()=>{
   setTop(null); tabbar.hidden=true;
-  const r=state.referents.find(x=>x.id===state.refSession);
+  const r=state.refProfile || state.referents.find(x=>x.id===state.refSession);
   const all=state.tournaments.filter(t=>!t.archived);
   const live=all.filter(t=>t.status==='live');
   const others=all.filter(t=>t.status!=='live');
@@ -2356,7 +2417,7 @@ screens.refSpace = ()=>{
   host.innerHTML=`<div class="screen" style="padding:0">
     <div style="display:flex;align-items:center;gap:10px;margin-bottom:16px">
       <div class="logo">${logoMark()} ${APP_NAME}</div>
-      <button class="btn ghost sm" style="margin-left:auto" onclick="state.refSession=null;go('home')">Quitter</button>
+      <button class="btn ghost sm" style="margin-left:auto" onclick="vboSignOut('refSession');go('home')">Quitter</button>
     </div>
     <div class="card" style="background:var(--brand-soft);border:none;margin-bottom:14px;display:flex;align-items:center;gap:12px">
       <span style="width:42px;height:42px;border-radius:12px;background:var(--surface);color:var(--brand);display:grid;place-items:center;font-size:19px;flex:none">${ICON.referee}</span>
