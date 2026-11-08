@@ -2639,27 +2639,29 @@ window.submitReferent=async ()=>{
   if(pass.length<8){ toast('Mot de passe : 8 caractères minimum'); return; }
   if(state.referents.some(x=>x.email.toLowerCase()===email.toLowerCase())){ toast('Un référent utilise déjà cet e-mail'); return; }
   const btn=document.getElementById('rf_submit');
-  // Repli démo : pas de Supabase → on ajoute un référent fictif.
-  if(!window.sb){
-    const r={id:'r'+Date.now(), name, email, password:pass, createdAt:Date.now(), status:'active'};
-    state.referents.push(r); lastRef=r; go('refMail'); return;
-  }
-  // Supabase : la fonction Edge crée le compte (aucun e-mail envoyé par le serveur).
+  // Le référent de base : on affiche TOUJOURS le message récapitulatif ensuite,
+  // que la création serveur réussisse ou non (le but : pouvoir copier le texte).
+  const r={id:'r'+Date.now(), name, email, password:pass, createdAt:Date.now(), status:'active', demo:!window.sb, accountOk:false, accountError:''};
+  // Repli démo : pas de Supabase → aperçu local.
+  if(!window.sb){ lastRef=r; go('refMail'); return; }
+  // Supabase : on tente de créer le compte, sans jamais bloquer l'affichage du message.
   if(btn){ btn.disabled=true; btn.textContent='Création en cours…'; }
   try{
     const { data, error } = await sb.functions.invoke('create-referent', { body:{ name, email, password:pass } });
-    if(error){
-      let msg='Échec de la création du compte';
-      try{ const body=await error.context?.json?.(); if(body&&body.error) msg=body.error; }catch(_){}
-      toast(msg); if(btn){ btn.disabled=false; btn.textContent='Créer le compte'; } return;
+    if(!error && data && data.ok){
+      r.id = (data.id)||r.id; r.accountOk=true; state.referents.push(r); state._refsLoaded=false;
+    } else {
+      // Échec serveur : on garde le message copiable, on note juste l'erreur.
+      let msg='';
+      try{ const body=await error?.context?.json?.(); if(body&&body.error) msg=body.error; }catch(_){}
+      if(!msg && data && data.error) msg=data.error;
+      r.accountOk=false; r.accountError=msg||'';
     }
-    if(data && data.error){ toast(data.error); if(btn){ btn.disabled=false; btn.textContent='Créer le compte'; } return; }
-    const r={id:(data&&data.id)||'r'+Date.now(), name, email, password:pass, createdAt:Date.now(), status:'active'};
-    state.referents.push(r); lastRef=r; state._refsLoaded=false; go('refMail');
   }catch(e){
-    console.error(e); toast('Connexion impossible — réessayez');
-    if(btn){ btn.disabled=false; btn.textContent='Créer le compte'; }
+    console.error(e); r.accountOk=false; r.accountError='Connexion au serveur impossible';
   }
+  if(btn){ btn.disabled=false; btn.textContent='Créer le compte'; }
+  lastRef=r; go('refMail');
 };
 window.showRefMail=(id)=>{ lastRef=state.referents.find(r=>r.id===id)||null; go('refMail'); };
 
@@ -2681,10 +2683,23 @@ function refInviteMessage(r){
   ].join('\n');
 }
 screens.refMail = ()=>{
-  setTop('Compte créé'); tabbar.hidden=true;
   const r=lastRef;
+  const okAccount = r && r.accountOk;
+  setTop(okAccount ? 'Compte créé' : (r&&r.demo ? 'Aperçu' : 'Message prêt')); tabbar.hidden=true;
   if(!r){ host.innerHTML='<div class="empty">👤<p>Aucun compte à afficher.</p></div>'; return; }
   const msg = r.password ? refInviteMessage(r) : null;
+  // Bandeau d'état selon le résultat de la création de compte côté serveur.
+  let banner;
+  if(okAccount){
+    banner = `<div class="card" style="background:var(--ok-soft);border:none;margin-bottom:14px;display:flex;align-items:center;gap:10px">
+      <span style="font-size:20px">✅</span><div><b style="font-size:14px">Compte créé pour ${r.name}</b><br><small class="muted">${r.email}</small></div></div>`;
+  } else if(r.demo){
+    banner = `<div class="card" style="background:var(--surface-2);border:none;margin-bottom:14px;display:flex;align-items:center;gap:10px">
+      <span style="font-size:20px">👁️</span><div><b style="font-size:14px">Aperçu — ${r.name}</b><br><small class="muted">Mode démo (hors ligne) : le compte n'est pas enregistré.</small></div></div>`;
+  } else {
+    banner = `<div class="card" style="background:var(--warn-soft,#fff3cd);border:none;margin-bottom:14px;display:flex;align-items:flex-start;gap:10px">
+      <span style="font-size:20px">⚠️</span><div><b style="font-size:14px">Compte non créé sur le serveur</b><br><small class="muted">Le référent ne pourra pas encore se connecter${r.accountError?' ('+r.accountError+')':''}. Le message ci-dessous reste copiable ; faites recréer le compte quand la création fonctionnera.</small></div></div>`;
+  }
   const msgBlock = msg
     ? `<p class="eyebrow" style="margin:4px 0 8px">Message à envoyer au référent</p>
        <div class="card" style="padding:14px 16px">
@@ -2694,9 +2709,7 @@ screens.refMail = ()=>{
        <div class="card" style="background:var(--surface-2);border:none;margin-top:10px"><small class="muted">🔒 Le mot de passe n'apparaît qu'ici, maintenant. Copiez ce message et envoyez-le au référent (mail, SMS…) avant de quitter l'écran.</small></div>`
     : `<div class="card" style="background:var(--surface-2);border:none"><small class="muted">Le mot de passe de ce compte n'est plus disponible (affiché une seule fois à la création). Vous pouvez recréer le compte si besoin.</small></div>`;
   host.innerHTML=`<div style="padding:0">
-    <div class="card" style="background:var(--ok-soft);border:none;margin-bottom:14px;display:flex;align-items:center;gap:10px">
-      <span style="font-size:20px">✅</span><div><b style="font-size:14px">Compte créé pour ${r.name}</b><br><small class="muted">${r.email}</small></div>
-    </div>
+    ${banner}
     ${msgBlock}
     <button class="btn ghost" style="margin-top:14px;width:100%" onclick="go('adminReferents')">← Retour aux référents</button>
   </div>`;

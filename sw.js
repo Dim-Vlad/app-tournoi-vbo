@@ -2,7 +2,7 @@
  * App shell en cache pour un démarrage instantané et un usage hors connexion.
  * Incrémenter CACHE à chaque déploiement pour forcer la mise à jour.
  */
-const CACHE = 'vbo-tournoi-v6';
+const CACHE = 'vbo-tournoi-v7';
 
 const APP_SHELL = [
   './',
