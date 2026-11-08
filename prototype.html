@@ -383,6 +383,101 @@ try {
     : null;
 } catch (e) { window.sb = null; console.warn("Supabase indisponible :", e); }
 </script>
+<script>
+/* ---------- Couche données Supabase (schéma vbo) ----------
+   Persiste les tournois dans vbo.tournaments. `config` (jsonb) porte tout le
+   paramétrage de l'app ; on y range aussi gymnases / équipes / étape du
+   brouillon (_gyms, _teams, _step) pour un aller-retour fidèle. Les colonnes
+   name / event_date / place / status / join_code / live_phase sont tenues à
+   jour en parallèle (affichage + requêtes). Repli silencieux si sb est null :
+   l'app garde alors ses données de démo. */
+(function(){
+  if(!window.sb){ window.vboDb = null; return; }
+  const isUuid = (v)=> typeof v==='string'
+    && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(v);
+  function toISODate(d){
+    if(!d) return null;
+    if(typeof d==='string' && /^\d{4}-\d{2}-\d{2}/.test(d)) return d.slice(0,10);
+    const t=Date.parse(d); return isNaN(t) ? null : new Date(t).toISOString().slice(0,10);
+  }
+  // objet tournoi (app) -> ligne vbo.tournaments
+  function toRow(t){
+    const cfg = Object.assign({}, t.config||{});
+    cfg._gyms  = t.gyms  || [];
+    cfg._teams = t.teams || [];
+    cfg._step  = t.step  || 0;
+    return {
+      name:       (t.config&&t.config.name)  || 'Tournoi',
+      event_date: toISODate(t.config&&t.config.date),
+      place:      (t.config&&t.config.place) || null,
+      status:     t.status   || 'draft',
+      archived:   !!t.archived,
+      join_code:  t.joinCode || null,
+      live_phase: t.livePhase|| 'brassage',
+      config:     cfg,
+    };
+  }
+  // ligne vbo.tournaments -> objet tournoi (app)
+  function fromRow(r){
+    const cfg = Object.assign({}, r.config||{});
+    const gyms = cfg._gyms || [], teams = cfg._teams || [], step = cfg._step || 0;
+    delete cfg._gyms; delete cfg._teams; delete cfg._step;
+    if(!cfg.name  && r.name)       cfg.name  = r.name;
+    if(!cfg.date  && r.event_date) cfg.date  = r.event_date;
+    if(!cfg.place && r.place)      cfg.place = r.place;
+    return {
+      id: r.id,
+      status: r.status || 'draft',
+      archived: !!r.archived,
+      config: cfg, gyms, teams, step,
+      joinCode: r.join_code || null,
+      livePhase: r.live_phase || 'brassage',
+      launchedAt: r.launched_at ? Date.parse(r.launched_at) : undefined,
+      closedAt:   r.closed_at   ? Date.parse(r.closed_at)   : undefined,
+      savedAt:    r.created_at  ? Date.parse(r.created_at)  : undefined,
+      _sb: true,
+    };
+  }
+  window.vboDb = {
+    isUuid, fromRow,
+    async list(){
+      const { data, error } = await sb.from('tournaments')
+        .select('*').order('created_at', { ascending:false });
+      if(error) throw error;
+      return (data||[]).map(fromRow);
+    },
+    // Enregistre : INSERT si l'id local n'est pas un uuid, sinon UPDATE.
+    // Renvoie l'id définitif (uuid DB) pour réconcilier l'objet local.
+    async save(t, extra){
+      const row = Object.assign(toRow(t), extra||{});
+      if(isUuid(t.id)){
+        const { error } = await sb.from('tournaments').update(row).eq('id', t.id);
+        if(error) throw error;
+        return t.id;
+      }
+      try{ if(state && state.adminProfile && state.adminProfile.id) row.created_by = state.adminProfile.id; }catch(_){}
+      const { data, error } = await sb.from('tournaments').insert(row).select('id').single();
+      if(error) throw error;
+      return data.id;
+    },
+    async setArchived(id, archived){
+      if(!isUuid(id)) return;
+      const { error } = await sb.from('tournaments').update({ archived }).eq('id', id);
+      if(error) throw error;
+    },
+    async setStatus(id, status, extra){
+      if(!isUuid(id)) return;
+      const { error } = await sb.from('tournaments').update(Object.assign({ status }, extra||{})).eq('id', id);
+      if(error) throw error;
+    },
+    async remove(id){
+      if(!isUuid(id)) return;
+      const { error } = await sb.from('tournaments').delete().eq('id', id);
+      if(error) throw error;
+    },
+  };
+})();
+</script>
 
 <div class="app" id="app">
   <!-- TOP BAR -->
@@ -983,7 +1078,7 @@ window.orgSignIn = async ()=>{
 window.vboSignOut = (which)=>{
   try { if(window.sb) sb.auth.signOut(); } catch(e){}
   if(which==='refSession'){ state.refSession=null; state.refProfile=null; }
-  else { state.authed=false; state.adminProfile=null; }
+  else { state.authed=false; state.adminProfile=null; state._tournLoaded=false; }
 };
 
 const TOURN_ST={
@@ -1034,8 +1129,25 @@ function tournSection(title,list){
   if(!list.length) return '';
   return `<p class="eyebrow" style="margin:16px 0 8px">${title}</p>${list.map(tournCard).join('')}`;
 }
+// Recharge la liste des tournois depuis Supabase (remplace les données de démo).
+async function refreshTournaments(){
+  if(!window.vboDb) return;
+  try{ state.tournaments = await vboDb.list(); state._tournLoaded=true; }
+  catch(e){ console.warn('Chargement tournois:', e); state._tournLoaded=true; toast('⚠️ Chargement cloud échoué'); }
+}
+window.refreshTournaments = refreshTournaments;
 screens.dashboard = ()=>{
   setTop(null); tabbar.hidden=true;
+  // Premier affichage avec Supabase : on charge depuis la base puis on ré-affiche.
+  if(window.vboDb && !state._tournLoaded){
+    refreshTournaments().then(()=>{ const cur=navStack[navStack.length-1]; if(cur && cur.screen==='dashboard') screens.dashboard(); });
+    host.innerHTML = `<div class="screen" style="padding:0">
+      <div style="display:flex;align-items:center;gap:10px;margin-bottom:16px">
+        <div class="logo">${logoMark()} ${APP_NAME}</div></div>
+      <p class="eyebrow">Mes tournois</p>
+      <div class="empty">⏳<p>Chargement…</p></div></div>`;
+    return;
+  }
   const view=state.dashView||'active';
   const active=state.tournaments.filter(t=>!t.archived);
   const archived=state.tournaments.filter(t=>t.archived);
@@ -1075,9 +1187,9 @@ screens.dashboard = ()=>{
     </div>`;
 };
 window.setDashView=(v)=>{ state.dashView=v; screens.dashboard(); };
-window.archiveTournament=(id)=>{ const t=state.tournaments.find(x=>x.id===id); if(t){ t.archived=true; toast('Tournoi archivé'); } screens.dashboard(); };
-window.unarchiveTournament=(id)=>{ const t=state.tournaments.find(x=>x.id===id); if(t){ t.archived=false; toast('Tournoi désarchivé'); } screens.dashboard(); };
-window.closeTournament=(id)=>{ const t=state.tournaments.find(x=>x.id===id); if(t){ t.status='closed'; t.closedAt=Date.now(); toast('Tournoi clôturé'); } screens.dashboard(); };
+window.archiveTournament=async (id)=>{ const t=state.tournaments.find(x=>x.id===id); if(t){ t.archived=true; if(window.vboDb){ try{ await vboDb.setArchived(id,true);}catch(e){ console.warn(e); toast('⚠️ Cloud échoué'); } } toast('Tournoi archivé'); } screens.dashboard(); };
+window.unarchiveTournament=async (id)=>{ const t=state.tournaments.find(x=>x.id===id); if(t){ t.archived=false; if(window.vboDb){ try{ await vboDb.setArchived(id,false);}catch(e){ console.warn(e); toast('⚠️ Cloud échoué'); } } toast('Tournoi désarchivé'); } screens.dashboard(); };
+window.closeTournament=async (id)=>{ const t=state.tournaments.find(x=>x.id===id); if(t){ t.status='closed'; t.closedAt=Date.now(); if(window.vboDb){ try{ await vboDb.setStatus(id,'closed',{ closed_at:new Date(t.closedAt).toISOString() });}catch(e){ console.warn(e); toast('⚠️ Cloud échoué'); } } toast('Tournoi clôturé'); } screens.dashboard(); };
 window.openTournament=(id)=>{
   const t=state.tournaments.find(x=>x.id===id); if(!t) return;
   Object.assign(state.config, t.config);
@@ -1108,15 +1220,21 @@ function snapshotTournament(){
     step: createStage,
   };
 }
-function saveDraft(exit){
+async function saveDraft(exit){
   saveWizard();
   const snap=snapshotTournament();
   let d=state.tournaments.find(x=>x.id===state.currentDraftId);
   if(!d){ d={id:'d'+Date.now(), status:'draft', archived:false}; state.tournaments.push(d); state.currentDraftId=d.id; }
   Object.assign(d, snap, {id:d.id, savedAt:Date.now()});
   if(!d.status) d.status='draft';
+  if(window.vboDb){
+    try{
+      const newId = await vboDb.save(d);
+      if(newId && newId!==d.id){ const old=d.id; d.id=newId; if(state.currentDraftId===old) state.currentDraftId=newId; }
+    }catch(e){ console.warn('Enregistrement brouillon:', e); toast('⚠️ Enregistrement cloud échoué'); }
+  }
   toast('💾 Brouillon enregistré');
-  if(exit) go('dashboard');
+  if(exit){ state._tournLoaded=false; go('dashboard'); }
 }
 function resumeDraft(id){
   const d=state.tournaments.find(x=>x.id===id); if(!d) return;
@@ -1129,7 +1247,7 @@ function resumeDraft(id){
   else { wizStep=3; rebuildPools(); go(st===4?'teamsRegister':st===5?'assignPools':'summary'); }
 }
 // Lancement : enregistre le tournoi dans la liste (statut « En cours ») puis génère le QR
-function launchTournament(){
+async function launchTournament(){
   saveWizard();
   if(!state.joinCode) state.joinCode=genJoinCode();
   const snap=snapshotTournament();
@@ -1137,6 +1255,12 @@ function launchTournament(){
   if(!t){ t={id:'t'+Date.now()}; state.tournaments.push(t); state.currentDraftId=t.id; }
   state.livePhase='brassage';
   Object.assign(t, snap, {id:t.id, status:'live', archived:false, joinCode:state.joinCode, launchedAt:Date.now(), livePhase:'brassage'});
+  if(window.vboDb){
+    try{
+      const newId = await vboDb.save(t, { launched_at:new Date(t.launchedAt).toISOString() });
+      if(newId && newId!==t.id){ const old=t.id; t.id=newId; if(state.currentDraftId===old) state.currentDraftId=newId; }
+    }catch(e){ console.warn('Lancement tournoi:', e); toast('⚠️ Enregistrement cloud échoué'); }
+  }
   go('qr');
 }
 window.saveDraft=saveDraft; window.resumeDraft=resumeDraft; window.launchTournament=launchTournament;
