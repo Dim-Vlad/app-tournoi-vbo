@@ -71,8 +71,29 @@ Les helpers `vbo.app_role()` / `vbo.is_admin()` / `vbo.is_staff()` sont en `SECU
      on conflict (id) do update set role = 'admin', status = 'active';
      ```
    > Variante : réutiliser **ton compte portfolio existant** comme admin VBO — même requête, avec son e-mail. Un seul login pour tout. (Sinon, un compte dédié garde les deux apps bien séparées.)
-4. Créer les comptes **référents** : depuis l'app (admin), via l'API admin Supabase (`auth.admin.createUser`) en passant
-   `user_metadata = { app: 'vbo', full_name, role: 'referent' }` — le trigger `vbo.handle_new_user` crée alors le profil automatiquement. **Le `app: 'vbo'` est indispensable** : sans lui, aucun profil n'est créé.
+4. Créer les comptes **référents** : depuis l'app (admin → Référents → *Inviter un référent*). L'app appelle la fonction Edge `create-referent` (voir ci-dessous), qui envoie une **invitation par e-mail**. Le référent clique sur le lien et **choisit lui-même son mot de passe**. Le compte est créé avec `user_metadata = { app: 'vbo', full_name, role: 'referent' }`, donc le trigger `vbo.handle_new_user` crée le profil automatiquement. **Le `app: 'vbo'` est indispensable** : sans lui, aucun profil n'est créé.
+
+## Fonction Edge `create-referent` (invitation référent par e-mail)
+
+Source : `functions/create-referent/index.ts`. Elle vérifie que l'appelant est **admin VBO**, puis envoie une invitation par e-mail au futur référent (`auth.admin.inviteUserByEmail`).
+
+**Déploiement (à faire par toi — la clé service_role ne doit jamais passer par l'app ni par l'assistant) :**
+
+1. Définir les secrets de la fonction (CLI Supabase, connecté au projet) :
+   ```bash
+   supabase secrets set SUPABASE_SERVICE_ROLE_KEY=sb_secret_xxxxxxxx
+   supabase secrets set APP_URL=https://dim-vlad.github.io/app-tournoi-vbo/
+   ```
+   *(`SUPABASE_URL` et `SUPABASE_ANON_KEY` sont injectés automatiquement.)*
+2. Déployer :
+   ```bash
+   supabase functions deploy create-referent
+   ```
+3. **SMTP obligatoire pour l'envoi réel** : **Authentication → Emails → SMTP Settings** → configurer un fournisseur (Brevo, Resend, Mailgun, Gmail…). Sans SMTP personnalisé, l'e-mail intégré de Supabase est fortement limité (quelques envois/heure, adresses restreintes) et ne convient pas en production.
+4. **Autoriser l'URL de redirection** : **Authentication → URL Configuration → Redirect URLs** → ajouter `https://dim-vlad.github.io/app-tournoi-vbo/` (et l'URL locale de test si besoin). Le lien d'invitation renvoie vers l'app, qui affiche alors l'écran « choisir mon mot de passe ».
+5. *(Optionnel)* Personnaliser le **modèle d'e-mail d'invitation** : **Authentication → Emails → Invite user**.
+
+> Repli sans fonction / sans Supabase : l'app garde un mode démo (référent fictif, aucun e-mail envoyé).
 
 ## Côté application (prochaine étape)
 

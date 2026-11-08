@@ -491,6 +491,100 @@ try {
       const { error } = await sb.from('tournaments').delete().eq('id', id);
       if(error) throw error;
     },
+    // Persiste la structure du tournoi (gymnases, équipes, poules, matchs de
+    // brassage) de façon idempotente : on efface l'ancienne puis on réinsère.
+    // `s` = { gyms:[{key,name,position}], teams:[{key,name,levelW}],
+    //         pools:[{letter,phase,gymKey,court,teamKeys:[]}],
+    //         matches:[{round,time,phase,poolKey,gymName,court,aKey,bKey,refKey}] }
+    async saveStructure(tid, s){
+      if(!isUuid(tid)) throw new Error('Tournoi non encore persisté.');
+      // Effacement (l'ordre respecte les clés étrangères ; pool_teams cascade).
+      for(const tbl of ['matches','pools','teams','gyms']){
+        const { error } = await sb.from(tbl).delete().eq('tournament_id', tid);
+        if(error) throw error;
+      }
+      // Gymnases
+      const gymKeyToId = {}, nameToGymId = {};
+      if(s.gyms.length){
+        const rows = s.gyms.map(g=>({ tournament_id:tid, name:g.name, position:g.position }));
+        const { data, error } = await sb.from('gyms').insert(rows).select('id,name,position');
+        if(error) throw error;
+        s.gyms.forEach(g=>{
+          const hit=(data||[]).find(r=>r.name===g.name && r.position===g.position);
+          if(hit){ gymKeyToId[g.key]=hit.id; nameToGymId[g.name]=hit.id; }
+        });
+      }
+      // Équipes
+      const teamNameToId = {};
+      if(s.teams.length){
+        const rows = s.teams.map(t=>({ tournament_id:tid, name:t.name, level:t.levelW }));
+        const { data, error } = await sb.from('teams').insert(rows).select('id,name');
+        if(error) throw error;
+        (data||[]).forEach(r=>{ teamNameToId[r.name]=r.id; });
+      }
+      // Poules
+      const poolLetterToId = {};
+      if(s.pools.length){
+        const rows = s.pools.map(p=>({ tournament_id:tid, letter:p.letter, phase:p.phase||'brassage',
+          gym_id: gymKeyToId[p.gymKey]||null, court: p.court!=null?p.court:null }));
+        const { data, error } = await sb.from('pools').insert(rows).select('id,letter');
+        if(error) throw error;
+        (data||[]).forEach(r=>{ poolLetterToId[r.letter]=r.id; });
+      }
+      // Appartenances équipe ↔ poule
+      const ptRows = [];
+      s.pools.forEach(p=>{ (p.teamKeys||[]).forEach((nm,seed)=>{
+        const pid=poolLetterToId[p.letter], teid=teamNameToId[nm];
+        if(pid&&teid) ptRows.push({ pool_id:pid, team_id:teid, seed });
+      }); });
+      if(ptRows.length){ const { error } = await sb.from('pool_teams').insert(ptRows); if(error) throw error; }
+      // Matchs
+      const mRows = (s.matches||[]).map(m=>({
+        tournament_id:tid, pool_id: poolLetterToId[m.poolKey]||null, phase:m.phase||'brassage',
+        round:m.round, scheduled_time:m.time, gym_id: nameToGymId[m.gymName]||null, court: m.court!=null?m.court:null,
+        team_a: teamNameToId[m.aKey]||null, team_b: teamNameToId[m.bKey]||null,
+        referee_team: m.refKey?(teamNameToId[m.refKey]||null):null, status:'todo',
+      }));
+      if(mRows.length){ const { error } = await sb.from('matches').insert(mRows); if(error) throw error; }
+      return { gyms:s.gyms.length, teams:s.teams.length, pools:s.pools.length, matches:mRows.length };
+    },
+    // Relit la structure persistée et la renvoie dans les formes attendues par
+    // l'app (state.pools / state.schedule). Renvoie null si rien n'est persisté.
+    async loadStructure(tid){
+      if(!isUuid(tid)) return null;
+      const W2ID = {4:'nat',3:'reg',2:'dep',1:'jeu'};
+      const q = (tbl)=> sb.from(tbl).select('*').eq('tournament_id', tid);
+      const [{ data:gyms }, { data:teams }, { data:pools }, { data:matches }] = await Promise.all([
+        q('gyms'), q('teams'), q('pools'), q('matches'),
+      ]);
+      if(!matches || !matches.length) return null;
+      const poolIds = (pools||[]).map(p=>p.id);
+      let pteams = [];
+      if(poolIds.length){
+        const { data } = await sb.from('pool_teams').select('*').in('pool_id', poolIds);
+        pteams = data||[];
+      }
+      const gymById = {}; (gyms||[]).forEach(g=>{ gymById[g.id]=g.name; });
+      const teamById = {}; (teams||[]).forEach(t=>{ teamById[t.id]={ name:t.name, level:W2ID[t.level]||'dep' }; });
+      const poolById = {}; (pools||[]).forEach(p=>{ poolById[p.id]=p; });
+      // Poules
+      const poolsOut = (pools||[]).slice().sort((a,b)=> (a.letter>b.letter?1:-1)).map(p=>{
+        const members = pteams.filter(x=>x.pool_id===p.id).sort((a,b)=>(a.seed||0)-(b.seed||0));
+        return { letter:p.letter, gym: gymById[p.gym_id]||'', court:p.court,
+          teams: members.map(m=> teamById[m.team_id] ? { t:teamById[m.team_id].name, level:teamById[m.team_id].level } : null).filter(Boolean) };
+      });
+      // Planning (schedule)
+      const S = { valid:'done', live:'live', pending:'live', todo:'upcoming' };
+      const schedOut = (matches||[]).slice().sort((a,b)=> (a.round-b.round) || String(a.scheduled_time).localeCompare(String(b.scheduled_time))).map(m=>({
+        r:m.round, time:m.scheduled_time, gym: gymById[m.gym_id]||'', court:m.court,
+        pool: poolById[m.pool_id]?poolById[m.pool_id].letter:'',
+        a: teamById[m.team_a]?teamById[m.team_a].name:'', b: teamById[m.team_b]?teamById[m.team_b].name:'',
+        ref: teamById[m.referee_team]?teamById[m.referee_team].name:'',
+        sa: m.score_a!=null?m.score_a:undefined, sb: m.score_b!=null?m.score_b:undefined,
+        sets: m.sets||null, status: S[m.status]||'upcoming',
+      }));
+      return { pools:poolsOut, schedule:schedOut };
+    },
   };
 })();
 </script>
@@ -1109,7 +1203,7 @@ window.orgSignIn = async ()=>{
 window.vboSignOut = (which)=>{
   try { if(window.sb) sb.auth.signOut(); } catch(e){}
   if(which==='refSession'){ state.refSession=null; state.refProfile=null; }
-  else { state.authed=false; state.adminProfile=null; state._tournLoaded=false; }
+  else { state.authed=false; state.adminProfile=null; state._tournLoaded=false; state._refsLoaded=false; }
 };
 
 const TOURN_ST={
@@ -1167,6 +1261,22 @@ async function refreshTournaments(){
   catch(e){ console.warn('Chargement tournois:', e); state._tournLoaded=true; toast('⚠️ Chargement cloud échoué'); }
 }
 window.refreshTournaments = refreshTournaments;
+// Recharge la liste des référents depuis vbo.profiles (role = referent).
+async function refreshReferents(){
+  if(!window.sb) return;
+  try{
+    const { data, error } = await sb.from('profiles')
+      .select('id,full_name,email,status,created_at')
+      .eq('role','referent').order('created_at',{ ascending:true });
+    if(error) throw error;
+    state.referents = (data||[]).map(p=>({
+      id:p.id, name:p.full_name||'(sans nom)', email:p.email||'', password:null,
+      status:p.status||'active', createdAt:p.created_at?Date.parse(p.created_at):Date.now(), invited:true,
+    }));
+    state._refsLoaded=true;
+  }catch(e){ console.warn('Chargement référents:', e); state._refsLoaded=true; }
+}
+window.refreshReferents = refreshReferents;
 screens.dashboard = ()=>{
   setTop(null); tabbar.hidden=true;
   // Premier affichage avec Supabase : on charge depuis la base puis on ré-affiche.
@@ -1220,7 +1330,7 @@ window.setDashView=(v)=>{ state.dashView=v; screens.dashboard(); };
 window.archiveTournament=async (id)=>{ const t=state.tournaments.find(x=>x.id===id); if(t){ t.archived=true; if(window.vboDb){ try{ await vboDb.setArchived(id,true);}catch(e){ console.warn(e); toast('⚠️ Cloud échoué'); } } toast('Tournoi archivé'); } screens.dashboard(); };
 window.unarchiveTournament=async (id)=>{ const t=state.tournaments.find(x=>x.id===id); if(t){ t.archived=false; if(window.vboDb){ try{ await vboDb.setArchived(id,false);}catch(e){ console.warn(e); toast('⚠️ Cloud échoué'); } } toast('Tournoi désarchivé'); } screens.dashboard(); };
 window.closeTournament=async (id)=>{ const t=state.tournaments.find(x=>x.id===id); if(t){ t.status='closed'; t.closedAt=Date.now(); if(window.vboDb){ try{ await vboDb.setStatus(id,'closed',{ closed_at:new Date(t.closedAt).toISOString() });}catch(e){ console.warn(e); toast('⚠️ Cloud échoué'); } } toast('Tournoi clôturé'); } screens.dashboard(); };
-window.openTournament=(id)=>{
+window.openTournament=async (id)=>{
   const t=state.tournaments.find(x=>x.id===id); if(!t) return;
   Object.assign(state.config, t.config);
   (t.gyms||[]).forEach((nm,i)=>{ if(GYMS[i]) GYMS[i].name=nm; });
@@ -1230,6 +1340,19 @@ window.openTournament=(id)=>{
   state.livePhase=t.livePhase||'brassage';
   rebuildPools();
   renderTabs('orgLive'); go('orgLive');
+  // Source de vérité : structure persistée (identique sur tous les appareils).
+  if(window.vboDb && vboDb.isUuid(t.id)){
+    try{
+      const struct=await vboDb.loadStructure(t.id);
+      if(struct && struct.schedule && struct.schedule.length){
+        if(struct.pools && struct.pools.length) state.pools=struct.pools;
+        state.schedule=struct.schedule;
+        state.loadedStructTid=t.id;
+        const cur=navStack[navStack.length-1];
+        if(cur && (cur.screen==='orgLive'||cur.screen==='myMatches')) render(cur.screen, cur.opts);
+      }
+    }catch(e){ console.warn('Lecture structure:', e); }
+  }
 };
 
 /* ---------- Création wizard ---------- */
@@ -1289,6 +1412,18 @@ async function launchTournament(){
     try{
       const newId = await vboDb.save(t, { launched_at:new Date(t.launchedAt).toISOString() });
       if(newId && newId!==t.id){ const old=t.id; t.id=newId; if(state.currentDraftId===old) state.currentDraftId=newId; }
+      // Phase 2 : persiste gymnases / équipes / poules / matchs de brassage.
+      if(vboDb.isUuid(t.id)){
+        const gymsUsed=[...new Set(state.pools.map(p=>p.gym))];
+        const structure={
+          gyms: gymsUsed.map(gid=>({ key:gid, name:gymName(gid), position:Math.max(0,GYMS.findIndex(g=>g.id===gid)) })),
+          teams: state.teams.map(tm=>({ key:tm.name, name:tm.name, levelW:levelMeta(tm.level).w })),
+          pools: state.pools.map(p=>({ letter:p.letter, phase:'brassage', gymKey:p.gym, court:p.court, teamKeys:p.teams.map(x=>x.t) })),
+          matches: (state.schedule||[]).map(m=>({ round:m.r, time:m.time, phase:'brassage', poolKey:m.pool, gymName:m.gym, court:m.court, aKey:m.a, bKey:m.b, refKey:m.ref })),
+        };
+        try{ await vboDb.saveStructure(t.id, structure); state.loadedStructTid=t.id; }
+        catch(e){ console.warn('Persistance structure:', e); toast('⚠️ Structure non enregistrée (tournoi créé)'); }
+      }
     }catch(e){ console.warn('Lancement tournoi:', e); toast('⚠️ Enregistrement cloud échoué'); }
   }
   go('qr');
@@ -2363,12 +2498,17 @@ function refDateStr(ts){
 
 screens.adminReferents = ()=>{
   setTop('Référents gymnase'); tabbar.hidden=true;
+  if(window.sb && !state._refsLoaded){
+    refreshReferents().then(()=>{ const cur=navStack[navStack.length-1]; if(cur && cur.screen==='adminReferents') screens.adminReferents(); });
+    host.innerHTML=`<div style="padding:0"><p class="eyebrow">Référents gymnase</p><div class="empty">⏳<p>Chargement…</p></div></div>`;
+    return;
+  }
   const list=state.referents;
   const active=list.filter(r=>r.status!=='suspended').length;
   host.innerHTML=`<div style="padding:0">
     <div class="card" style="background:var(--brand-soft);border:none;margin-bottom:14px;display:flex;gap:12px;align-items:flex-start">
       <span style="display:inline-flex;color:var(--brand);margin-top:1px;font-size:18px">${ICON.referee}</span>
-      <small class="muted">Les référents sont les personnes présentes dans les gymnases le jour de l'événement. Chaque compte reçoit par e-mail son accès (lien + mot de passe) et peut suivre tous les tournois.</small>
+      <small class="muted">Les référents sont les personnes présentes dans les gymnases le jour de l'événement. Chacun reçoit une invitation par e-mail, choisit son mot de passe, et peut suivre tous les tournois.</small>
     </div>
     <p class="eyebrow" style="margin:4px 0 8px">${list.length} compte${list.length>1?'s':''}${active<list.length?` · ${active} actif${active>1?'s':''}`:''}</p>
     ${list.length?list.map(r=>{
@@ -2399,16 +2539,18 @@ screens.refProfile = (opts)=>{
     <p class="eyebrow" style="margin:4px 0 8px">Identifiants</p>
     <div class="card" style="padding:2px 16px;overflow:hidden">
       <div class="summary-row"><span class="muted">E-mail</span><b style="word-break:break-all">${r.email}</b></div>
-      <div class="summary-row">
+      ${r.password
+        ? `<div class="summary-row">
         <span class="muted">Mot de passe</span>
         <span style="display:flex;align-items:center;gap:8px;margin-left:auto">
           <b id="rp_pwd" data-full="${r.password}" style="letter-spacing:.04em;font-family:var(--font-display)">••••••••</b>
           <button type="button" class="pwd-eye" style="position:static;transform:none" aria-label="Afficher le mot de passe" onclick="toggleProfilePwd(this)">${EYE_ON}</button>
         </span>
-      </div>
+      </div>`
+        : `<div class="summary-row"><span class="muted">Mot de passe</span><span class="muted" style="font-size:12.5px;text-align:right">Défini par le référent<br>via l'e-mail d'invitation</span></div>`}
       <div class="summary-row" style="border-bottom:none"><span class="muted">Créé le</span><span>${refDateStr(r.createdAt)}</span></div>
     </div>
-    <button class="btn ghost" style="margin-top:14px" onclick="showRefMail('${r.id}')">✉️ Revoir / renvoyer l'e-mail d'accès</button>
+    <button class="btn ghost" style="margin-top:14px" onclick="showRefMail('${r.id}')">✉️ Revoir l'état de l'invitation</button>
     <p class="eyebrow" style="margin:20px 0 8px">Gestion du compte</p>
     <button class="btn ghost" style="display:flex;align-items:center;justify-content:center;gap:8px" onclick="toggleRefSuspend('${r.id}')">
       <span style="display:inline-flex;color:${susp?'var(--ok)':'var(--warn)'}">${susp?ICON.referee:ICON.pause}</span>${susp?'Réactiver le compte':'Suspendre le compte'}</button>
@@ -2423,10 +2565,15 @@ window.toggleProfilePwd=(btn)=>{
   btn.innerHTML=hidden?EYE_OFF:EYE_ON;
   btn.setAttribute('aria-label', hidden?'Masquer le mot de passe':'Afficher le mot de passe');
 };
-window.toggleRefSuspend=(id)=>{
+window.toggleRefSuspend=async (id)=>{
   const r=state.referents.find(x=>x.id===id); if(!r) return;
-  r.status = r.status==='suspended' ? 'active' : 'suspended';
-  toast(r.status==='suspended'?'Compte suspendu':'Compte réactivé');
+  const next = r.status==='suspended' ? 'active' : 'suspended';
+  if(window.sb){
+    const { error } = await sb.from('profiles').update({ status: next }).eq('id', id);
+    if(error){ toast('Mise à jour impossible — réessayez'); console.error(error); return; }
+  }
+  r.status = next;
+  toast(next==='suspended'?'Compte suspendu':'Compte réactivé');
   render('refProfile',{id});
 };
 window.confirmDeleteRef=(id)=>{
@@ -2436,7 +2583,12 @@ window.confirmDeleteRef=(id)=>{
     <button class="btn" style="width:100%;background:var(--danger)" onclick="doDeleteRef('${id}')">Supprimer définitivement</button>
     <button class="btn ghost" style="width:100%;margin-top:10px" onclick="closeSheet()">Annuler</button>`);
 };
-window.doDeleteRef=(id)=>{
+window.doDeleteRef=async (id)=>{
+  if(window.sb){
+    // Supprime le profil VBO → l'accès à l'app est révoqué (plus de rôle référent).
+    const { error } = await sb.from('profiles').delete().eq('id', id);
+    if(error){ toast('Suppression impossible — réessayez'); console.error(error); return; }
+  }
   const i=state.referents.findIndex(x=>x.id===id);
   if(i>=0) state.referents.splice(i,1);
   closeSheet(); toast('Référent supprimé');
@@ -2447,70 +2599,69 @@ screens.createRef = ()=>{
   setTop('Nouveau référent'); tabbar.hidden=true;
   host.innerHTML=`<div style="padding:0">
     <div class="card">
-      <h3 style="font-size:18px;margin-bottom:2px">Créer un accès référent</h3>
-      <p class="lead">À la validation, un e-mail contenant le lien d'accès et le mot de passe est envoyé automatiquement.</p>
+      <h3 style="font-size:18px;margin-bottom:2px">Inviter un référent</h3>
+      <p class="lead">Le référent reçoit une invitation par e-mail. Il clique sur le lien et <b>choisit lui-même son mot de passe</b> — rien à transmettre à la main.</p>
       <label class="field"><span>Nom du référent</span><input id="rf_name" placeholder="Prénom Nom" autocomplete="off"></label>
       <label class="field"><span>Adresse e-mail</span><input id="rf_mail" type="email" placeholder="nom@exemple.fr" autocomplete="off"></label>
-      <label class="field"><span>Mot de passe</span>
-        <span class="pwd-wrap">
-          <input id="rf_pass" type="password" placeholder="Au moins 6 caractères" autocomplete="new-password">
-          <button type="button" class="pwd-eye" aria-label="Afficher le mot de passe" onclick="togglePwd(this,'rf_pass')">${EYE_ON}</button>
-        </span></label>
-      <button type="button" class="btn ghost sm" style="margin-top:2px" onclick="var i=document.getElementById('rf_pass');i.value=genRefPassword();i.type='text';toast('Mot de passe généré')">🎲 Générer un mot de passe sécurisé</button>
       <div class="card" style="background:var(--surface-2);border:none;margin:12px 0 0">
-        <small class="muted">🔒 Le lien d'accès et ce mot de passe sont transmis au référent par e-mail à la validation.</small>
+        <small class="muted">✉️ Un e-mail d'invitation est envoyé à cette adresse. Le référent définit son mot de passe en ouvrant le lien.</small>
       </div>
-      <button class="btn" style="margin-top:18px" onclick="submitReferent()">Valider &amp; envoyer l'e-mail</button>
+      <button class="btn" id="rf_submit" style="margin-top:18px" onclick="submitReferent()">Envoyer l'invitation</button>
     </div>
   </div>`;
 };
-window.submitReferent=()=>{
+window.submitReferent=async ()=>{
   const name=(document.getElementById('rf_name').value||'').trim();
   const email=(document.getElementById('rf_mail').value||'').trim();
-  const pass=(document.getElementById('rf_pass').value||'').trim();
   if(!name){ toast('Indiquez le nom du référent'); return; }
   if(!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)){ toast('Adresse e-mail invalide'); return; }
   if(state.referents.some(x=>x.email.toLowerCase()===email.toLowerCase())){ toast('Un référent utilise déjà cet e-mail'); return; }
-  if(!pass){ toast('Choisissez un mot de passe (ou générez-en un)'); return; }
-  if(pass.length<6){ toast('Mot de passe trop court (6 caractères min.)'); return; }
-  const r={id:'r'+Date.now(), name, email, password:pass, createdAt:Date.now(), status:'active'};
-  state.referents.push(r);
-  lastRef=r;
-  go('refMail');
+  const btn=document.getElementById('rf_submit');
+  // Repli démo : pas de Supabase → on ajoute un référent fictif (invité).
+  if(!window.sb){
+    const r={id:'r'+Date.now(), name, email, password:null, createdAt:Date.now(), status:'active', invited:true};
+    state.referents.push(r); lastRef=r; go('refMail'); return;
+  }
+  // Supabase : la fonction Edge envoie une vraie invitation par e-mail.
+  if(btn){ btn.disabled=true; btn.textContent='Envoi en cours…'; }
+  try{
+    const { data, error } = await sb.functions.invoke('create-referent', { body:{ name, email } });
+    if(error){
+      let msg='Échec de l\'envoi de l\'invitation';
+      try{ const body=await error.context?.json?.(); if(body&&body.error) msg=body.error; }catch(_){}
+      toast(msg); if(btn){ btn.disabled=false; btn.textContent='Envoyer l\'invitation'; } return;
+    }
+    if(data && data.error){ toast(data.error); if(btn){ btn.disabled=false; btn.textContent='Envoyer l\'invitation'; } return; }
+    const r={id:(data&&data.id)||'r'+Date.now(), name, email, password:null, createdAt:Date.now(), status:'active', invited:true};
+    state.referents.push(r); lastRef=r; state._refsLoaded=false; go('refMail');
+  }catch(e){
+    console.error(e); toast('Connexion impossible — réessayez');
+    if(btn){ btn.disabled=false; btn.textContent='Envoyer l\'invitation'; }
+  }
 };
 window.showRefMail=(id)=>{ lastRef=state.referents.find(r=>r.id===id)||null; go('refMail'); };
 
 screens.refMail = ()=>{
-  setTop('E-mail envoyé'); tabbar.hidden=true;
+  setTop('Invitation envoyée'); tabbar.hidden=true;
   const r=lastRef;
-  if(!r){ host.innerHTML='<div class="empty">✉️<p>Aucun e-mail à afficher.</p></div>'; return; }
+  if(!r){ host.innerHTML='<div class="empty">✉️<p>Aucune invitation à afficher.</p></div>'; return; }
+  const demo=!window.sb || r.invited===true && !r.id;
   host.innerHTML=`<div style="padding:0">
     <div class="card" style="background:var(--ok-soft);border:none;margin-bottom:14px;display:flex;align-items:center;gap:10px">
-      <span style="font-size:20px">✅</span><div><b style="font-size:14px">E-mail envoyé à ${r.name}</b><br><small class="muted">${r.email}</small></div>
+      <span style="font-size:20px">✅</span><div><b style="font-size:14px">Invitation envoyée à ${r.name}</b><br><small class="muted">${r.email}</small></div>
     </div>
-    <p class="eyebrow" style="margin:4px 0 8px">Aperçu de l'e-mail</p>
+    <p class="eyebrow" style="margin:4px 0 8px">Ce qui se passe ensuite</p>
     <div class="card" style="padding:0;overflow:hidden">
-      <div style="background:var(--brand);color:#fff;padding:16px 16px 14px">
-        <div style="display:flex;align-items:center;gap:8px;font-weight:800;font-family:var(--font-display)">
-          <span style="width:30px;height:30px;border-radius:8px;background:#fff;display:grid;place-items:center;overflow:hidden"><img src="${VBO_LOGO}" alt="" style="width:82%;height:82%;object-fit:contain"></span> Tournoi VBO
-        </div>
-      </div>
-      <div style="padding:16px;font-size:13.5px;line-height:1.55;color:var(--fg)">
-        <p style="margin:0 0 10px">Bonjour <b>${r.name}</b>,</p>
-        <p style="margin:0 0 10px">Vous avez été désigné(e) comme <b>référent gymnase</b> pour les tournois du Volley-Ball Ollioulais. Ce compte vous permet de suivre tous les tournois et de saisir les matchs sur place le jour de l'événement.</p>
-        <p style="margin:0 0 6px"><b>Votre accès :</b></p>
-        <div style="background:var(--surface-2);border-radius:12px;padding:12px 14px;margin:0 0 12px">
-          <div style="margin-bottom:8px"><small class="muted">Lien d'accès</small><br><a href="#" onclick="go('refLogin');return false" style="color:var(--brand);font-weight:700;word-break:break-all">${REF_LINK}</a></div>
-          <div style="margin-bottom:8px"><small class="muted">Identifiant (e-mail)</small><br><b>${r.email}</b></div>
-          <div><small class="muted">Mot de passe</small><br><b style="letter-spacing:.04em;font-family:var(--font-display)">${r.password}</b></div>
-        </div>
-        <p style="margin:0 0 10px">Ouvrez le lien ci-dessus, connectez-vous avec votre e-mail et ce mot de passe, puis sélectionnez le tournoi en cours. En cas de question, rapprochez-vous de l'organisateur.</p>
-        <p style="margin:0">Sportivement,<br><b>L'équipe Tournoi VBO</b></p>
+      <div style="padding:16px;font-size:13.5px;line-height:1.6;color:var(--fg)">
+        <div style="display:flex;gap:11px;margin-bottom:12px"><span style="flex:none;width:24px;height:24px;border-radius:50%;background:var(--brand-soft);color:var(--brand);display:grid;place-items:center;font-weight:800;font-size:13px">1</span><span><b>${r.name}</b> reçoit un e-mail d'invitation « Tournoi VBO » à l'adresse <b>${r.email}</b>.</span></div>
+        <div style="display:flex;gap:11px;margin-bottom:12px"><span style="flex:none;width:24px;height:24px;border-radius:50%;background:var(--brand-soft);color:var(--brand);display:grid;place-items:center;font-weight:800;font-size:13px">2</span><span>Il clique sur le lien, arrive sur l'app et <b>choisit son mot de passe</b>.</span></div>
+        <div style="display:flex;gap:11px"><span style="flex:none;width:24px;height:24px;border-radius:50%;background:var(--brand-soft);color:var(--brand);display:grid;place-items:center;font-weight:800;font-size:13px">3</span><span>Il accède à l'espace référent et voit tous les tournois.</span></div>
       </div>
     </div>
-    <div class="card" style="background:var(--surface-2);border:none;margin-top:12px"><small class="muted">💡 Prototype : aucun e-mail réel n'est envoyé. Ceci est l'aperçu du message qui serait transmis.</small></div>
-    <button class="btn ghost" style="margin-top:14px" onclick="go('refLogin')">Tester l'espace référent</button>
-    <button class="btn ghost sm" style="margin-top:10px;width:100%" onclick="back()">← Retour aux référents</button>
+    ${demo
+      ? `<div class="card" style="background:var(--surface-2);border:none;margin-top:12px"><small class="muted">💡 Aperçu hors-ligne : l'envoi réel de l'e-mail se fait une fois l'app connectée à Supabase.</small></div>`
+      : `<div class="card" style="background:var(--surface-2);border:none;margin-top:12px"><small class="muted">📨 L'invitation part via Supabase. Si le référent ne la reçoit pas, vérifiez ses spams ou renvoyez-la depuis sa fiche.</small></div>`}
+    <button class="btn ghost" style="margin-top:14px;width:100%" onclick="go('adminReferents')">← Retour aux référents</button>
   </div>`;
 };
 
@@ -2751,6 +2902,50 @@ window.submitScore=(id)=>{
   go('myMatches',{replace:true});
 };
 
+/* ---------- Invitation référent : définir son mot de passe ---------- */
+screens.setPassword = ()=>{
+  setTop(null); tabbar.hidden=true;
+  const recovery = state.inviteFlow==='recovery';
+  host.innerHTML=`<div class="card">
+    <div style="display:flex;align-items:center;gap:10px;margin-bottom:6px">
+      <span style="width:40px;height:40px;border-radius:12px;background:var(--brand-soft);color:var(--brand);display:grid;place-items:center;font-size:18px">${ICON.referee}</span>
+      <h3 style="font-size:18px;margin:0">${recovery?'Nouveau mot de passe':'Bienvenue&nbsp;!'}</h3>
+    </div>
+    <p class="lead">${recovery?'Choisissez un nouveau mot de passe pour votre compte.':'Vous rejoignez les référents du Volley-Ball Ollioulais. Choisissez votre mot de passe pour activer votre accès.'}</p>
+    ${pwdField('Mot de passe','sp_pass','')}
+    ${pwdField('Confirmez le mot de passe','sp_pass2','')}
+    <div class="card" style="background:var(--surface-2);border:none;margin:10px 0 0"><small class="muted">🔒 Au moins 6 caractères. Vous l'utiliserez ensuite avec votre e-mail pour vous connecter.</small></div>
+    <button class="btn" id="sp_submit" style="margin-top:16px" onclick="submitNewPassword()">Enregistrer et continuer</button>
+  </div>`;
+};
+window.submitNewPassword=async ()=>{
+  const p1=(document.getElementById('sp_pass').value||'').trim();
+  const p2=(document.getElementById('sp_pass2').value||'').trim();
+  if(p1.length<6){ toast('Mot de passe trop court (6 caractères min.)'); return; }
+  if(p1!==p2){ toast('Les mots de passe ne correspondent pas'); return; }
+  if(!window.sb){ toast('Connexion requise'); return; }
+  const btn=document.getElementById('sp_submit');
+  if(btn){ btn.disabled=true; btn.textContent='Enregistrement…'; }
+  try{
+    const { data, error } = await sb.auth.updateUser({ password: p1 });
+    if(error){
+      toast(/session|logged|JWT|expired/i.test(error.message||'')
+        ? 'Lien expiré — demandez une nouvelle invitation' : error.message);
+      if(btn){ btn.disabled=false; btn.textContent='Enregistrer et continuer'; } return;
+    }
+    const uid=data.user.id;
+    const { data: prof } = await sb.from('profiles').select('role,status,full_name').eq('id',uid).maybeSingle();
+    try{ history.replaceState(null,'',location.pathname); }catch(_){}
+    state.inviteFlow=null;
+    if(prof && prof.role==='referent'){
+      if(prof.status!=='active'){ await sb.auth.signOut(); toast('⏸️ Ce compte est suspendu — contactez l\'organisation'); go('home'); return; }
+      state.refProfile={ id:uid, name:prof.full_name, email:data.user.email }; state.refSession='sb';
+      toast('Mot de passe enregistré ✓'); go('refSpace'); return;
+    }
+    toast('Mot de passe enregistré ✓'); go('home');
+  }catch(e){ console.error(e); toast('Échec — réessayez'); if(btn){ btn.disabled=false; btn.textContent='Enregistrer et continuer'; } }
+};
+
 /* ---------- Render dispatch ---------- */
 function render(screen,opts){
   (screens[screen]||screens.home)(opts||{});
@@ -2760,6 +2955,17 @@ function render(screen,opts){
   try{ window.scrollTo(0,0); }catch(_){}
 }
 (function boot(){
+  const urlStr=(location.hash||'')+' '+(location.search||'');
+  // Lien d'invitation / réinitialisation reçu par e-mail → écran « choisir mon mot de passe ».
+  if(window.sb && /type=(invite|recovery|signup)/.test(urlStr)){
+    state.inviteFlow = /type=recovery/.test(urlStr) ? 'recovery' : 'invite';
+    // Supabase (detectSessionInUrl) établit la session depuis l'URL de façon asynchrone.
+    sb.auth.onAuthStateChange((event)=>{
+      if(event==='PASSWORD_RECOVERY'){ state.inviteFlow='recovery'; }
+    });
+    go('setPassword');
+    return;
+  }
   const code=readJoinCodeFromUrl();
   if(code){ state.joinCode=code; go('scan'); toast('Code détecté : '+code); return; }
   go('home');
