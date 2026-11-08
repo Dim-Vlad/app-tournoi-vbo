@@ -1,25 +1,23 @@
 // Edge Function — create-referent
 //
-// Crée (par invitation e-mail) un compte référent VBO.
-// Flux : l'admin (connecté) appelle cette fonction → on vérifie qu'il est bien
-// admin → on envoie une INVITATION par e-mail au futur référent. Celui-ci reçoit
-// un mail, clique sur le lien et choisit son propre mot de passe dans l'app.
+// Crée un compte référent VBO avec un mot de passe défini par l'admin.
+//
+// Flux : l'admin (connecté) saisit nom + e-mail + mot de passe et appelle cette
+// fonction → on vérifie qu'il est bien admin → on crée le compte auth avec ce
+// mot de passe (actif tout de suite). AUCUN e-mail n'est envoyé par le serveur :
+// l'application génère un message prêt à copier-coller que l'admin transmet
+// lui-même (mail, SMS…). → pas de SMTP, pas de clé e-mail à configurer.
 //
 // Le compte auth est créé avec user_metadata { app:'vbo', role:'referent',
 // full_name }. Le déclencheur `vbo.handle_new_user` crée alors automatiquement
 // le profil dans vbo.profiles (uniquement parce que app = 'vbo').
 //
 // Secrets à définir côté Supabase (jamais dans le dépôt) :
-//   supabase secrets set SUPABASE_SERVICE_ROLE_KEY=sb_secret_xxx
-//   supabase secrets set APP_URL=https://dim-vlad.github.io/app-tournoi-vbo/
+//   SUPABASE_SERVICE_ROLE_KEY = sb_secret_xxx   (obligatoire)
 // (SUPABASE_URL et SUPABASE_ANON_KEY sont injectés automatiquement.)
 //
 // Déploiement :  supabase functions deploy create-referent
-//
-// ⚠️ L'envoi réel de l'e-mail suppose un SMTP configuré dans Supabase
-//    (Authentication → Emails → SMTP Settings). Sans SMTP personnalisé,
-//    l'e-mail intégré de Supabase est fortement limité (quelques envois/heure,
-//    adresses restreintes) et ne convient pas en production.
+//                (ou copier ce fichier dans l'éditeur Edge Functions du dashboard)
 
 import { createClient } from "jsr:@supabase/supabase-js@2";
 
@@ -45,8 +43,6 @@ Deno.serve(async (req: Request) => {
     const url = Deno.env.get("SUPABASE_URL");
     const anon = Deno.env.get("SUPABASE_ANON_KEY");
     const service = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
-    const appUrl =
-      Deno.env.get("APP_URL") || "https://dim-vlad.github.io/app-tournoi-vbo/";
 
     if (!url || !anon || !service) {
       return json(500, {
@@ -81,7 +77,7 @@ Deno.serve(async (req: Request) => {
     }
 
     // 2. Valider l'entrée.
-    let payload: { name?: string; email?: string };
+    let payload: { name?: string; email?: string; password?: string };
     try {
       payload = await req.json();
     } catch {
@@ -89,40 +85,42 @@ Deno.serve(async (req: Request) => {
     }
     const name = (payload.name || "").trim();
     const email = (payload.email || "").trim().toLowerCase();
+    const password = (payload.password || "").trim();
     const emailOk = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
     if (!name) return json(400, { error: "Le nom du référent est requis." });
     if (!emailOk) return json(400, { error: "Adresse e-mail invalide." });
+    if (password.length < 8) {
+      return json(400, { error: "Le mot de passe doit faire au moins 8 caractères." });
+    }
 
-    // 3. Inviter l'utilisateur par e-mail (il choisira son mot de passe).
+    // 3. Créer le compte avec le mot de passe choisi (actif immédiatement).
     const admin = createClient(url, service, {
       auth: { autoRefreshToken: false, persistSession: false },
     });
 
-    const { data: invited, error: inviteErr } =
-      await admin.auth.admin.inviteUserByEmail(email, {
-        redirectTo: appUrl,
-        data: { app: "vbo", role: "referent", full_name: name },
+    const { data: created, error: createErr } =
+      await admin.auth.admin.createUser({
+        email,
+        password,
+        email_confirm: true, // pas de confirmation à cliquer : compte utilisable tout de suite
+        user_metadata: { app: "vbo", role: "referent", full_name: name },
       });
 
-    if (inviteErr) {
-      const msg = String(inviteErr.message || "");
-      // Cas courant : l'adresse a déjà un compte.
-      if (/already|registered|exists/i.test(msg)) {
+    if (createErr) {
+      const msg = String(createErr.message || "");
+      if (/already|registered|exists|duplicate/i.test(msg)) {
         return json(409, {
           error: "Un compte existe déjà pour cette adresse e-mail.",
         });
       }
-      return json(400, {
-        error: "Échec de l'envoi de l'invitation : " + msg,
-      });
+      return json(400, { error: "Échec de la création du compte : " + msg });
     }
 
     return json(200, {
       ok: true,
-      id: invited.user?.id ?? null,
+      id: created.user?.id ?? null,
       email,
       name,
-      invited: true,
     });
   } catch (e) {
     return json(500, { error: "Erreur inattendue : " + String((e as Error)?.message || e) });

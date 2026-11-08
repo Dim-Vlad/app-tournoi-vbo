@@ -646,6 +646,7 @@ const ICON = {
 function logoMark(cls){ return `<span class="mark${cls?' '+cls:''}"><img src="${VBO_LOGO}" alt="Logo Volley-Ball Ollioulais"></span>`; }
 const EYE_ON=`<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7-10-7-10-7Z"/><circle cx="12" cy="12" r="3"/></svg>`;
 const EYE_OFF=`<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M10.6 6.2A9.8 9.8 0 0 1 12 5c6.5 0 10 7 10 7a17.6 17.6 0 0 1-3.2 3.9M6.3 6.3C3.4 8 2 12 2 12s3.5 7 10 7a9.7 9.7 0 0 0 4.2-.9"/><path d="M9.9 9.9a3 3 0 0 0 4.2 4.2"/><path d="m3 3 18 18"/></svg>`;
+const COPY_ICON=`<svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="9" y="9" width="11" height="11" rx="2"/><path d="M5 15V5a2 2 0 0 1 2-2h10"/></svg>`;
 // Champ mot de passe avec œil de révélation
 function pwdField(label,id,value){
   return `<label class="field"><span>${label}</span>
@@ -2521,7 +2522,7 @@ screens.adminReferents = ()=>{
   host.innerHTML=`<div style="padding:0">
     <div class="card" style="background:var(--brand-soft);border:none;margin-bottom:14px;display:flex;gap:12px;align-items:flex-start">
       <span style="display:inline-flex;color:var(--brand);margin-top:1px;font-size:18px">${ICON.referee}</span>
-      <small class="muted">Les référents sont les personnes présentes dans les gymnases le jour de l'événement. Chacun reçoit une invitation par e-mail, choisit son mot de passe, et peut suivre tous les tournois.</small>
+      <small class="muted">Les référents sont les personnes présentes dans les gymnases le jour de l'événement. Vous créez chaque compte avec un mot de passe, un e-mail d'accueil lui est envoyé, et il peut suivre tous les tournois.</small>
     </div>
     <p class="eyebrow" style="margin:4px 0 8px">${list.length} compte${list.length>1?'s':''}${active<list.length?` · ${active} actif${active>1?'s':''}`:''}</p>
     ${list.length?list.map(r=>{
@@ -2560,10 +2561,10 @@ screens.refProfile = (opts)=>{
           <button type="button" class="pwd-eye" style="position:static;transform:none" aria-label="Afficher le mot de passe" onclick="toggleProfilePwd(this)">${EYE_ON}</button>
         </span>
       </div>`
-        : `<div class="summary-row"><span class="muted">Mot de passe</span><span class="muted" style="font-size:12.5px;text-align:right">Défini par le référent<br>via l'e-mail d'invitation</span></div>`}
+        : `<div class="summary-row"><span class="muted">Mot de passe</span><span class="muted" style="font-size:12.5px;text-align:right">Défini à la création<br>(non conservé par sécurité)</span></div>`}
       <div class="summary-row" style="border-bottom:none"><span class="muted">Créé le</span><span>${refDateStr(r.createdAt)}</span></div>
     </div>
-    <button class="btn ghost" style="margin-top:14px" onclick="showRefMail('${r.id}')">✉️ Revoir l'état de l'invitation</button>
+    <button class="btn ghost" style="margin-top:14px" onclick="showRefMail('${r.id}')">✉️ Détails du compte</button>
     <p class="eyebrow" style="margin:20px 0 8px">Gestion du compte</p>
     <button class="btn ghost" style="display:flex;align-items:center;justify-content:center;gap:8px" onclick="toggleRefSuspend('${r.id}')">
       <span style="display:inline-flex;color:${susp?'var(--ok)':'var(--warn)'}">${susp?ICON.referee:ICON.pause}</span>${susp?'Réactiver le compte':'Suspendre le compte'}</button>
@@ -2612,70 +2613,114 @@ screens.createRef = ()=>{
   setTop('Nouveau référent'); tabbar.hidden=true;
   host.innerHTML=`<div style="padding:0">
     <div class="card">
-      <h3 style="font-size:18px;margin-bottom:2px">Inviter un référent</h3>
-      <p class="lead">Le référent reçoit une invitation par e-mail. Il clique sur le lien et <b>choisit lui-même son mot de passe</b> — rien à transmettre à la main.</p>
-      <label class="field"><span>Nom du référent</span><input id="rf_name" placeholder="Prénom Nom" autocomplete="off"></label>
+      <h3 style="font-size:18px;margin-bottom:2px">Créer un référent</h3>
+      <p class="lead">Renseignez ses coordonnées et un mot de passe. Le compte est actif immédiatement, et vous obtenez un <b>message prêt à copier-coller</b> à lui envoyer (mail ou SMS).</p>
+      <label class="field"><span>Prénom</span><input id="rf_first" placeholder="Camille" autocomplete="off"></label>
+      <label class="field"><span>Nom</span><input id="rf_last" placeholder="Durand" autocomplete="off"></label>
       <label class="field"><span>Adresse e-mail</span><input id="rf_mail" type="email" placeholder="nom@exemple.fr" autocomplete="off"></label>
+      <label class="field"><span>Mot de passe</span>
+        <span class="pwd-wrap">
+          <input id="rf_pass" type="text" placeholder="8 caractères minimum" autocomplete="new-password">
+          <button type="button" class="pwd-eye" aria-label="Afficher ou masquer" onclick="togglePwd(this,'rf_pass')">${EYE_OFF}</button>
+        </span>
+      </label>
+      <button type="button" class="btn ghost" style="margin-top:4px;display:flex;align-items:center;justify-content:center;gap:8px" onclick="genRefPwd()">🎲 Générer un mot de passe</button>
       <div class="card" style="background:var(--surface-2);border:none;margin:12px 0 0">
-        <small class="muted">✉️ Un e-mail d'invitation est envoyé à cette adresse. Le référent définit son mot de passe en ouvrant le lien.</small>
+        <small class="muted">📋 Après création, vous obtenez un message tout prêt (lien + identifiants) à copier et envoyer au référent par le moyen de votre choix.</small>
       </div>
-      <button class="btn" id="rf_submit" style="margin-top:18px" onclick="submitReferent()">Envoyer l'invitation</button>
+      <button class="btn" id="rf_submit" style="margin-top:18px" onclick="submitReferent()">Créer le compte</button>
     </div>
   </div>`;
 };
+// Génère un mot de passe fort et lisible (sans caractères ambigus).
+window.genRefPwd=()=>{
+  const inp=document.getElementById('rf_pass'); if(!inp) return;
+  const chars='ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnpqrstuvwxyz23456789';
+  const n=12; let out='';
+  try{ const a=new Uint32Array(n); crypto.getRandomValues(a); for(let i=0;i<n;i++) out+=chars[a[i]%chars.length]; }
+  catch(_){ for(let i=0;i<n;i++) out+=chars[Math.floor(Math.random()*chars.length)]; }
+  inp.type='text'; inp.value=out; toast('Mot de passe généré');
+};
 window.submitReferent=async ()=>{
-  const name=(document.getElementById('rf_name').value||'').trim();
+  const first=(document.getElementById('rf_first').value||'').trim();
+  const last=(document.getElementById('rf_last').value||'').trim();
   const email=(document.getElementById('rf_mail').value||'').trim();
-  if(!name){ toast('Indiquez le nom du référent'); return; }
+  const pass=(document.getElementById('rf_pass').value||'').trim();
+  const name=[first,last].filter(Boolean).join(' ').trim();
+  if(!name){ toast('Indiquez le prénom et le nom'); return; }
   if(!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)){ toast('Adresse e-mail invalide'); return; }
+  if(pass.length<8){ toast('Mot de passe : 8 caractères minimum'); return; }
   if(state.referents.some(x=>x.email.toLowerCase()===email.toLowerCase())){ toast('Un référent utilise déjà cet e-mail'); return; }
   const btn=document.getElementById('rf_submit');
-  // Repli démo : pas de Supabase → on ajoute un référent fictif (invité).
+  // Repli démo : pas de Supabase → on ajoute un référent fictif.
   if(!window.sb){
-    const r={id:'r'+Date.now(), name, email, password:null, createdAt:Date.now(), status:'active', invited:true};
+    const r={id:'r'+Date.now(), name, email, password:pass, createdAt:Date.now(), status:'active'};
     state.referents.push(r); lastRef=r; go('refMail'); return;
   }
-  // Supabase : la fonction Edge envoie une vraie invitation par e-mail.
-  if(btn){ btn.disabled=true; btn.textContent='Envoi en cours…'; }
+  // Supabase : la fonction Edge crée le compte (aucun e-mail envoyé par le serveur).
+  if(btn){ btn.disabled=true; btn.textContent='Création en cours…'; }
   try{
-    const { data, error } = await sb.functions.invoke('create-referent', { body:{ name, email } });
+    const { data, error } = await sb.functions.invoke('create-referent', { body:{ name, email, password:pass } });
     if(error){
-      let msg='Échec de l\'envoi de l\'invitation';
+      let msg='Échec de la création du compte';
       try{ const body=await error.context?.json?.(); if(body&&body.error) msg=body.error; }catch(_){}
-      toast(msg); if(btn){ btn.disabled=false; btn.textContent='Envoyer l\'invitation'; } return;
+      toast(msg); if(btn){ btn.disabled=false; btn.textContent='Créer le compte'; } return;
     }
-    if(data && data.error){ toast(data.error); if(btn){ btn.disabled=false; btn.textContent='Envoyer l\'invitation'; } return; }
-    const r={id:(data&&data.id)||'r'+Date.now(), name, email, password:null, createdAt:Date.now(), status:'active', invited:true};
+    if(data && data.error){ toast(data.error); if(btn){ btn.disabled=false; btn.textContent='Créer le compte'; } return; }
+    const r={id:(data&&data.id)||'r'+Date.now(), name, email, password:pass, createdAt:Date.now(), status:'active'};
     state.referents.push(r); lastRef=r; state._refsLoaded=false; go('refMail');
   }catch(e){
     console.error(e); toast('Connexion impossible — réessayez');
-    if(btn){ btn.disabled=false; btn.textContent='Envoyer l\'invitation'; }
+    if(btn){ btn.disabled=false; btn.textContent='Créer le compte'; }
   }
 };
 window.showRefMail=(id)=>{ lastRef=state.referents.find(r=>r.id===id)||null; go('refMail'); };
 
+// Construit le message prêt à envoyer au référent.
+function refInviteMessage(r){
+  let appUrl;
+  try{ appUrl = location.origin + location.pathname.replace(/[^/]*$/,''); }catch(_){ appUrl=''; }
+  if(!appUrl || appUrl.indexOf('http')!==0) appUrl='https://dim-vlad.github.io/app-tournoi-vbo/';
+  return [
+    'Bonjour '+r.name+',',
+    '',
+    'Un accès référent a été créé pour toi sur l\'application Tournoi VBO (Volley-Ball Ollioulais).',
+    '',
+    '🔗 Application : '+appUrl,
+    '📧 E-mail : '+r.email,
+    '🔑 Mot de passe : '+(r.password||''),
+    '',
+    'Connecte-toi avec ces identifiants pour suivre les tournois et saisir les scores le jour J. Tu pourras changer ton mot de passe ensuite.',
+  ].join('\n');
+}
 screens.refMail = ()=>{
-  setTop('Invitation envoyée'); tabbar.hidden=true;
+  setTop('Compte créé'); tabbar.hidden=true;
   const r=lastRef;
-  if(!r){ host.innerHTML='<div class="empty">✉️<p>Aucune invitation à afficher.</p></div>'; return; }
-  const demo=!window.sb || r.invited===true && !r.id;
+  if(!r){ host.innerHTML='<div class="empty">👤<p>Aucun compte à afficher.</p></div>'; return; }
+  const msg = r.password ? refInviteMessage(r) : null;
+  const msgBlock = msg
+    ? `<p class="eyebrow" style="margin:4px 0 8px">Message à envoyer au référent</p>
+       <div class="card" style="padding:14px 16px">
+         <textarea id="rf_msg" readonly rows="9" style="width:100%;border:none;background:var(--surface-2);border-radius:10px;padding:12px;font:inherit;font-size:13px;line-height:1.55;color:var(--fg);resize:vertical;box-sizing:border-box">${msg.replace(/</g,'&lt;')}</textarea>
+         <button type="button" class="btn" style="margin-top:12px;display:flex;align-items:center;justify-content:center;gap:8px" onclick="copyRefMsg()"><span style="display:inline-flex">${COPY_ICON}</span>Copier le message</button>
+       </div>
+       <div class="card" style="background:var(--surface-2);border:none;margin-top:10px"><small class="muted">🔒 Le mot de passe n'apparaît qu'ici, maintenant. Copiez ce message et envoyez-le au référent (mail, SMS…) avant de quitter l'écran.</small></div>`
+    : `<div class="card" style="background:var(--surface-2);border:none"><small class="muted">Le mot de passe de ce compte n'est plus disponible (affiché une seule fois à la création). Vous pouvez recréer le compte si besoin.</small></div>`;
   host.innerHTML=`<div style="padding:0">
     <div class="card" style="background:var(--ok-soft);border:none;margin-bottom:14px;display:flex;align-items:center;gap:10px">
-      <span style="font-size:20px">✅</span><div><b style="font-size:14px">Invitation envoyée à ${r.name}</b><br><small class="muted">${r.email}</small></div>
+      <span style="font-size:20px">✅</span><div><b style="font-size:14px">Compte créé pour ${r.name}</b><br><small class="muted">${r.email}</small></div>
     </div>
-    <p class="eyebrow" style="margin:4px 0 8px">Ce qui se passe ensuite</p>
-    <div class="card" style="padding:0;overflow:hidden">
-      <div style="padding:16px;font-size:13.5px;line-height:1.6;color:var(--fg)">
-        <div style="display:flex;gap:11px;margin-bottom:12px"><span style="flex:none;width:24px;height:24px;border-radius:50%;background:var(--brand-soft);color:var(--brand);display:grid;place-items:center;font-weight:800;font-size:13px">1</span><span><b>${r.name}</b> reçoit un e-mail d'invitation « Tournoi VBO » à l'adresse <b>${r.email}</b>.</span></div>
-        <div style="display:flex;gap:11px;margin-bottom:12px"><span style="flex:none;width:24px;height:24px;border-radius:50%;background:var(--brand-soft);color:var(--brand);display:grid;place-items:center;font-weight:800;font-size:13px">2</span><span>Il clique sur le lien, arrive sur l'app et <b>choisit son mot de passe</b>.</span></div>
-        <div style="display:flex;gap:11px"><span style="flex:none;width:24px;height:24px;border-radius:50%;background:var(--brand-soft);color:var(--brand);display:grid;place-items:center;font-weight:800;font-size:13px">3</span><span>Il accède à l'espace référent et voit tous les tournois.</span></div>
-      </div>
-    </div>
-    ${demo
-      ? `<div class="card" style="background:var(--surface-2);border:none;margin-top:12px"><small class="muted">💡 Aperçu hors-ligne : l'envoi réel de l'e-mail se fait une fois l'app connectée à Supabase.</small></div>`
-      : `<div class="card" style="background:var(--surface-2);border:none;margin-top:12px"><small class="muted">📨 L'invitation part via Supabase. Si le référent ne la reçoit pas, vérifiez ses spams ou renvoyez-la depuis sa fiche.</small></div>`}
+    ${msgBlock}
     <button class="btn ghost" style="margin-top:14px;width:100%" onclick="go('adminReferents')">← Retour aux référents</button>
   </div>`;
+};
+window.copyRefMsg=()=>{
+  const el=document.getElementById('rf_msg');
+  const txt = el ? el.value : (lastRef?refInviteMessage(lastRef):'');
+  const done=()=>toast('Message copié');
+  try{
+    navigator.clipboard.writeText(txt).then(done).catch(()=>{ if(el){ el.focus(); el.select(); document.execCommand&&document.execCommand('copy'); done(); } });
+  }catch(_){ if(el){ el.focus(); el.select(); try{ document.execCommand('copy'); done(); }catch(e){ toast('Copie impossible — sélectionnez le texte'); } } }
 };
 
 screens.refLogin = ()=>{

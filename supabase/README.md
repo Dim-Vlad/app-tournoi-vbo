@@ -71,29 +71,31 @@ Les helpers `vbo.app_role()` / `vbo.is_admin()` / `vbo.is_staff()` sont en `SECU
      on conflict (id) do update set role = 'admin', status = 'active';
      ```
    > Variante : réutiliser **ton compte portfolio existant** comme admin VBO — même requête, avec son e-mail. Un seul login pour tout. (Sinon, un compte dédié garde les deux apps bien séparées.)
-4. Créer les comptes **référents** : depuis l'app (admin → Référents → *Inviter un référent*). L'app appelle la fonction Edge `create-referent` (voir ci-dessous), qui envoie une **invitation par e-mail**. Le référent clique sur le lien et **choisit lui-même son mot de passe**. Le compte est créé avec `user_metadata = { app: 'vbo', full_name, role: 'referent' }`, donc le trigger `vbo.handle_new_user` crée le profil automatiquement. **Le `app: 'vbo'` est indispensable** : sans lui, aucun profil n'est créé.
+4. Créer les comptes **référents** : depuis l'app (admin → Référents → *Créer un référent*). L'admin saisit prénom, nom, e-mail et un **mot de passe** (avec un générateur). L'app appelle la fonction Edge `create-referent` (voir ci-dessous), qui crée le compte **avec ce mot de passe** (actif immédiatement). L'app affiche ensuite un **message prêt à copier-coller** (lien + identifiants) que l'admin transmet lui-même (mail, SMS…). Le compte est créé avec `user_metadata = { app: 'vbo', full_name, role: 'referent' }`, donc le trigger `vbo.handle_new_user` crée le profil automatiquement. **Le `app: 'vbo'` est indispensable** : sans lui, aucun profil n'est créé.
 
-## Fonction Edge `create-referent` (invitation référent par e-mail)
+## Fonction Edge `create-referent` (création du compte référent)
 
-Source : `functions/create-referent/index.ts`. Elle vérifie que l'appelant est **admin VBO**, puis envoie une invitation par e-mail au futur référent (`auth.admin.inviteUserByEmail`).
+Source : `functions/create-referent/index.ts`. Elle vérifie que l'appelant est **admin VBO**, puis crée le compte référent avec le mot de passe choisi (`auth.admin.createUser`, `email_confirm: true`). **Aucun e-mail n'est envoyé par le serveur** : l'app génère un message copiable que l'admin envoie à la main → **pas de SMTP ni de clé e-mail à configurer**.
 
 **Déploiement (à faire par toi — la clé service_role ne doit jamais passer par l'app ni par l'assistant) :**
 
-1. Définir les secrets de la fonction (CLI Supabase, connecté au projet) :
-   ```bash
-   supabase secrets set SUPABASE_SERVICE_ROLE_KEY=sb_secret_xxxxxxxx
-   supabase secrets set APP_URL=https://dim-vlad.github.io/app-tournoi-vbo/
-   ```
+1. Définir le secret de la fonction :
+   - **Via le dashboard** : Project Settings → Edge Functions → Secrets → ajouter `SUPABASE_SERVICE_ROLE_KEY` (valeur : Project Settings → API → *service_role*).
+   - **Ou via la CLI** (connectée au projet) :
+     ```bash
+     supabase secrets set SUPABASE_SERVICE_ROLE_KEY=sb_secret_xxxxxxxx
+     ```
    *(`SUPABASE_URL` et `SUPABASE_ANON_KEY` sont injectés automatiquement.)*
-2. Déployer :
-   ```bash
-   supabase functions deploy create-referent
-   ```
-3. **SMTP obligatoire pour l'envoi réel** : **Authentication → Emails → SMTP Settings** → configurer un fournisseur (Brevo, Resend, Mailgun, Gmail…). Sans SMTP personnalisé, l'e-mail intégré de Supabase est fortement limité (quelques envois/heure, adresses restreintes) et ne convient pas en production.
-4. **Autoriser l'URL de redirection** : **Authentication → URL Configuration → Redirect URLs** → ajouter `https://dim-vlad.github.io/app-tournoi-vbo/` (et l'URL locale de test si besoin). Le lien d'invitation renvoie vers l'app, qui affiche alors l'écran « choisir mon mot de passe ».
-5. *(Optionnel)* Personnaliser le **modèle d'e-mail d'invitation** : **Authentication → Emails → Invite user**.
+2. Déployer la fonction :
+   - **Via le dashboard** : Edge Functions → créer `create-referent` → coller le contenu de `functions/create-referent/index.ts` → Deploy.
+   - **Ou via la CLI** :
+     ```bash
+     supabase functions deploy create-referent
+     ```
 
-> Repli sans fonction / sans Supabase : l'app garde un mode démo (référent fictif, aucun e-mail envoyé).
+> Repli sans fonction / sans Supabase : l'app garde un mode démo (référent fictif en local).
+
+> ℹ️ Le SMTP (Authentication → Emails) n'est plus nécessaire pour les référents. Il ne sert qu'aux e-mails d'auth natifs de Supabase (ex. réinitialisation de mot de passe), si tu décides un jour de les activer.
 
 ## Côté application (prochaine étape)
 
