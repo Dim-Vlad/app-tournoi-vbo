@@ -1,0 +1,2544 @@
+<title>Tournoi VBO</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<style>
+/* Layout concept: single mobile app frame (max 440px), screen router, sticky bottom tab bar + contextual top bar */
+:root{
+  /* Palette Volley-Ball Ollioulais — verts club, thème clair style iOS */
+  --ink:#0a2410;        /* vert forêt profond */
+  --bg:#f2f6f0;         /* fond groupé clair, légère teinte verte (iOS) */
+  --surface:#ffffff;
+  --surface-2:#eef3ec;  /* sauge très clair */
+  --fg:#15241a;         /* presque noir forêt */
+  --muted:#667a68;      /* vert-gris */
+  --line:#e5ece2;
+  --brand:#2e8b57;      /* vert club (lisible, texte blanc OK) */
+  --brand-soft:#e4f3e1; /* remplissage vert doux */
+  --brand-ink:#063e0b;  /* vert forêt foncé — titres/forts */
+  --accent:#4fb86a;     /* vert vif club */
+  --accent-soft:#e7f8e3;
+  --ok:#2e9e5b;
+  --ok-soft:#e2f4e5;
+  --warn:#c98a12;
+  --warn-soft:#f8ecca;
+  --danger:#d6453f;
+  --danger-soft:#fbe4e2;
+  --radius:18px;
+  --radius-sm:12px;
+  --shadow:0 10px 30px -14px rgba(10,40,20,.26);
+  --font-display:-apple-system,"SF Pro Display","SF Pro Text",system-ui,"Segoe UI",sans-serif;
+  --font-body:-apple-system,"SF Pro Text",system-ui,"Segoe UI",sans-serif;
+}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){
+  --ink:#071a0c; --bg:#0a1a0e; --surface:#122018; --surface-2:#1a2c20;
+  --fg:#e9f3ea; --muted:#9bb49f; --line:#223528; --brand:#5cc47e; --brand-soft:#15321f; --brand-ink:#9fe6b2;
+  --accent:#6fd389; --accent-soft:#163020; --ok:#4fc27e; --ok-soft:#133a26;
+  --warn:#e2b545; --warn-soft:#3a2f10; --danger:#ef6a63; --danger-soft:#3a1a18;
+  --shadow:0 14px 34px -14px rgba(0,0,0,.6); color-scheme:dark;
+}}
+:root[data-theme="dark"]{
+  --ink:#071a0c; --bg:#0a1a0e; --surface:#122018; --surface-2:#1a2c20;
+  --fg:#e9f3ea; --muted:#9bb49f; --line:#223528; --brand:#5cc47e; --brand-soft:#15321f; --brand-ink:#9fe6b2;
+  --accent:#6fd389; --accent-soft:#163020; --ok:#4fc27e; --ok-soft:#133a26;
+  --warn:#e2b545; --warn-soft:#3a2f10; --danger:#ef6a63; --danger-soft:#3a1a18;
+  --shadow:0 14px 34px -14px rgba(0,0,0,.6); color-scheme:dark;
+}
+*{box-sizing:border-box}
+html,body{height:100%}
+body{margin:0;background:
+  radial-gradient(1200px 600px at 50% -10%, color-mix(in srgb,var(--brand) 14%,transparent), transparent 60%),
+  var(--bg);
+  color:var(--fg);font-family:var(--font-body);font-size:15px;line-height:1.5;
+  -webkit-font-smoothing:antialiased;}
+button{font-family:inherit;cursor:pointer}
+h1,h2,h3,h4{font-family:var(--font-display);margin:0;text-wrap:balance;letter-spacing:-.01em}
+input,select{font-family:inherit;font-size:15px}
+
+/* App shell = phone frame */
+.app{max-width:440px;margin:0 auto;min-height:100%;background:var(--surface);
+  position:relative;display:flex;flex-direction:column;
+  box-shadow:0 0 0 1px var(--line);overflow:hidden}
+@media(min-width:472px){.app{margin:18px auto;min-height:calc(100% - 36px);border-radius:30px}}
+
+/* Top bar */
+.topbar{position:sticky;top:env(safe-area-inset-top,0);z-index:20;background:var(--surface);
+  border-bottom:1px solid var(--line);display:flex;align-items:center;gap:10px;
+  padding:14px max(16px,env(safe-area-inset-left,0)) 12px max(16px,env(safe-area-inset-right,0));min-height:56px}
+.topbar .back{border:none;background:var(--surface-2);width:34px;height:34px;border-radius:10px;
+  color:var(--fg);font-size:17px;display:grid;place-items:center;flex:none}
+.topbar h2{font-size:17px;flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.topbar .step{font-size:12px;color:var(--muted);font-weight:600;flex:none}
+
+/* Screen scroll area */
+.screen{flex:1;overflow-y:auto;overflow-x:hidden;
+  padding:18px max(16px,env(safe-area-inset-left,0)) 26px max(16px,env(safe-area-inset-right,0))}
+.screen.flush{padding-left:0;padding-right:0}
+[hidden]{display:none!important}
+
+/* Typographic bits */
+.eyebrow{font-size:11px;font-weight:700;letter-spacing:.12em;text-transform:uppercase;color:var(--brand)}
+.muted{color:var(--muted)}
+.lead{color:var(--muted);font-size:14.5px;margin:6px 0 0}
+
+/* Buttons */
+.btn{display:flex;align-items:center;justify-content:center;gap:8px;width:100%;
+  border:none;border-radius:14px;padding:15px 18px;font-size:15.5px;font-weight:700;
+  background:var(--brand);color:#fff;letter-spacing:-.01em}
+.btn.accent{background:var(--accent)}
+.btn.ghost{background:var(--surface-2);color:var(--fg)}
+.btn.ok{background:var(--ok)}
+.btn.sm{padding:10px 14px;font-size:13.5px;width:auto;border-radius:11px}
+.btn.outline{background:transparent;color:var(--brand);box-shadow:inset 0 0 0 1.5px var(--brand)}
+.btn:disabled{opacity:.45}
+.btn-row{display:flex;gap:10px}
+
+/* Cards */
+.card{background:var(--surface);border:1px solid var(--line);border-radius:var(--radius);padding:16px}
+.card+.card{margin-top:12px}
+.stack{display:flex;flex-direction:column;gap:12px}
+
+/* Home hero */
+.hero{color:#fff;border-radius:26px;padding:26px 22px;position:relative;overflow:hidden;
+  background:linear-gradient(150deg,#063e0b,#1f7a43 58%,#2e8b57);box-shadow:var(--shadow)}
+.hero .ball{position:absolute;right:-30px;top:-30px;width:150px;height:150px;border-radius:50%;
+  background:conic-gradient(from 20deg,#83dc7a,#c7f3bf,#4fb86a,#83dc7a);opacity:.85;filter:blur(2px)}
+.hero h1{font-size:29px;line-height:1.04;color:#fff;position:relative;font-weight:800}
+.hero p{position:relative;margin:10px 0 0;color:#dbf1e2;font-size:14.5px;max-width:26ch}
+.logo{display:flex;align-items:center;gap:10px;font-family:var(--font-display);font-weight:800;font-size:19px;letter-spacing:-.02em}
+.logo .mark{width:36px;height:36px;border-radius:10px;background:#fff;border:1px solid var(--line);box-shadow:0 1px 2px rgba(10,40,20,.08);
+  display:grid;place-items:center;overflow:hidden;flex:none}
+.logo .mark img{width:84%;height:84%;object-fit:contain;display:block}
+.logo .mark.plain{background:transparent}
+.logo .mark.plain img{width:100%;height:100%}
+
+/* Entry tiles */
+.entry{display:flex;align-items:center;gap:14px;width:100%;text-align:left;border:1px solid var(--line);
+  background:var(--surface);border-radius:var(--radius);padding:17px;color:var(--fg)}
+.entry .ic{width:46px;height:46px;border-radius:13px;display:grid;place-items:center;font-size:22px;flex:none}
+.entry b{font-family:var(--font-display);font-size:16px}
+.entry small{color:var(--muted);display:block;margin-top:2px}
+.entry .chev{margin-left:auto;color:var(--muted);font-size:20px}
+
+/* Form fields */
+.field{display:block;margin-top:14px}
+.field>span{display:block;font-size:12.5px;font-weight:700;color:var(--muted);margin-bottom:6px}
+.field input,.field select{width:100%;padding:13px 14px;border:1.5px solid var(--line);border-radius:12px;
+  background:var(--surface);color:var(--fg)}
+.field input:focus,.field select:focus{outline:none;border-color:var(--brand)}
+.pwd-wrap{position:relative;display:block}
+.pwd-wrap input{padding-right:46px}
+.pwd-eye{position:absolute;top:50%;right:6px;transform:translateY(-50%);width:34px;height:34px;display:grid;place-items:center;border:none;background:transparent;color:var(--muted);cursor:pointer;border-radius:9px;padding:0}
+.pwd-eye:hover{color:var(--brand);background:var(--surface-2)}
+.grid2{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+
+/* Stepper (number controls) */
+.stepper{display:flex;align-items:center;gap:0;border:1.5px solid var(--line);border-radius:12px;overflow:hidden}
+.stepper button{width:44px;height:46px;border:none;background:var(--surface-2);color:var(--fg);font-size:20px;font-weight:700}
+.stepper input{flex:1;min-width:0;text-align:center;border:none;font-weight:800;font-size:17px;background:var(--surface);color:var(--fg);
+  font-variant-numeric:tabular-nums}
+.stepper input:focus{outline:none}
+
+/* Toggle */
+.toggle{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:13px 0;border-top:1px solid var(--line)}
+.toggle:first-of-type{border-top:none}
+.toggle b{font-weight:600;font-size:14.5px}
+.toggle small{color:var(--muted);display:block;font-size:12.5px}
+.sw{width:48px;height:28px;border-radius:20px;background:var(--line);border:none;position:relative;flex:none;transition:.18s}
+.sw::after{content:"";position:absolute;top:3px;left:3px;width:22px;height:22px;border-radius:50%;background:#fff;transition:.18s;box-shadow:0 1px 3px rgba(0,0,0,.3)}
+.sw.on{background:var(--brand)}
+.sw.on::after{left:23px}
+
+/* Progress bar for wizard */
+.wiz-prog{display:flex;gap:5px;padding:0 max(16px,env(safe-area-inset-left,0));margin-top:-2px;margin-bottom:2px}
+.wiz-prog span{flex:1;height:4px;border-radius:3px;background:var(--line)}
+.wiz-prog span.done{background:var(--brand)}
+.wiz-prog span.cur{background:var(--accent)}
+
+/* Chips / badges */
+.chip{display:inline-flex;align-items:center;gap:5px;font-size:12px;font-weight:700;padding:5px 10px;border-radius:999px;
+  background:var(--surface-2);color:var(--muted)}
+.badge{font-size:11px;font-weight:800;padding:4px 9px;border-radius:999px;letter-spacing:.02em;white-space:nowrap;flex:none}
+.badge.ok{background:var(--ok-soft);color:var(--ok)}
+.badge.warn{background:var(--warn-soft);color:var(--warn)}
+.badge.wait{background:var(--surface-2);color:var(--muted)}
+.badge.danger{background:var(--danger-soft);color:var(--danger)}
+.badge.brand{background:var(--brand-soft);color:var(--brand)}
+
+/* Gym block */
+.gymhead{display:flex;align-items:center;gap:9px;margin:18px 0 10px}
+.gymhead .dot{width:10px;height:10px;border-radius:50%;flex:none}
+.gymhead h3{font-size:15px}
+.gymhead .count{margin-left:auto;font-size:12px;color:var(--muted);font-weight:700}
+.gymblock{border:1px solid var(--line);border-left:5px solid var(--gc,var(--brand));border-radius:16px;padding:12px 12px 14px;margin-top:16px;background:color-mix(in srgb, var(--gc,var(--brand)) 7%, var(--surface))}
+.gymblock .gymhead{margin:2px 2px 12px}
+.gymblock .badge-gym{display:inline-flex;align-items:center;gap:7px;background:var(--gc,var(--brand));color:#fff;padding:5px 12px;border-radius:999px;font-weight:800;font-size:13.5px;font-family:var(--font-display);letter-spacing:-.01em}
+
+/* Pool card */
+.pool{border:1px solid var(--line);border-radius:14px;overflow:hidden}
+.pool+.pool{margin-top:10px}
+.pool .ph{display:flex;align-items:center;gap:8px;padding:11px 13px;background:var(--surface-2);font-weight:800;font-family:var(--font-display)}
+.pool .ph .tn{margin-left:auto;font-size:12px;color:var(--muted);font-weight:700}
+.pool ul{list-style:none;margin:0;padding:4px 0}
+.pool li{display:flex;align-items:center;gap:9px;padding:9px 13px;font-size:14px}
+.pool li .seed{width:22px;height:22px;border-radius:7px;background:var(--brand-soft);color:var(--brand);
+  font-size:11px;font-weight:800;display:grid;place-items:center;flex:none}
+
+/* Standings table */
+.tbl{width:100%;border-collapse:collapse;font-size:13.5px}
+.tbl th{font-size:11px;text-transform:uppercase;letter-spacing:.04em;color:var(--muted);text-align:center;padding:8px 4px;font-weight:700}
+.tbl th:first-child,.tbl td:first-child{text-align:left;padding-left:12px}
+.tbl td{padding:10px 4px;text-align:center;border-top:1px solid var(--line);font-variant-numeric:tabular-nums}
+.tbl td:first-child{font-weight:600}
+.tbl tr.qual td:first-child{box-shadow:inset 3px 0 0 var(--ok)}
+.rk{display:inline-grid;place-items:center;width:20px;height:20px;border-radius:6px;background:var(--surface-2);
+  font-size:11px;font-weight:800;margin-right:7px}
+.rk.top{background:var(--ok-soft);color:var(--ok)}
+
+/* Match card */
+.match{border:1px solid var(--line);border-radius:14px;padding:13px;display:flex;flex-direction:column;gap:10px}
+.match+.match{margin-top:10px}
+.match .meta{display:flex;align-items:center;gap:8px;font-size:11.5px;color:var(--muted);font-weight:700}
+.match .teams{display:grid;grid-template-columns:1fr auto 1fr;align-items:center;gap:8px}
+.match .teams .t{font-weight:700;font-size:14px}
+.match .teams .t.right{text-align:right}
+.match .teams .sc{font-family:var(--font-display);font-weight:800;font-size:20px;display:flex;gap:6px;align-items:center;
+  font-variant-numeric:tabular-nums}
+.match .teams .sc .vs{color:var(--muted);font-size:13px;font-weight:700}
+
+/* Score entry big inputs */
+.scorebox{display:grid;grid-template-columns:1fr auto 1fr;gap:12px;align-items:center;margin:8px 0}
+.scorebox .tlab{font-weight:800;font-family:var(--font-display);font-size:15px;text-align:center}
+.scorebox .num{width:100%;height:84px;border:2px solid var(--line);border-radius:16px;text-align:center;
+  font-family:var(--font-display);font-weight:800;font-size:40px;background:var(--surface);color:var(--fg);
+  font-variant-numeric:tabular-nums}
+.scorebox .num:focus{outline:none;border-color:var(--brand)}
+.scorebox .dash{color:var(--muted);font-size:24px;font-weight:800}
+.scorebox .setlab{grid-column:1/-1;font-size:11px;font-weight:800;letter-spacing:.06em;text-transform:uppercase;color:var(--muted);text-align:center;margin-bottom:-4px}
+
+/* QR */
+.qrwrap{display:grid;place-items:center;gap:16px;padding:24px 0}
+.qrcard{background:#fff;padding:18px;border-radius:22px;box-shadow:var(--shadow)}
+#qrcode img,#qrcode canvas{display:block;border-radius:6px}
+.joincode{font-family:var(--font-display);font-weight:800;font-size:26px;letter-spacing:.18em;
+  background:var(--surface-2);padding:10px 18px;border-radius:12px}
+
+/* Bottom tab bar */
+.tabbar{position:sticky;bottom:0;z-index:20;display:flex;background:var(--surface);
+  border-top:1px solid var(--line);
+  padding:8px max(10px,env(safe-area-inset-left,0)) calc(8px + env(safe-area-inset-bottom,0)) max(10px,env(safe-area-inset-right,0))}
+.tabbar button{flex:1;border:none;background:none;color:var(--muted);display:flex;flex-direction:column;
+  align-items:center;gap:3px;font-size:10.5px;font-weight:700;padding:5px 2px;border-radius:12px}
+.tabbar button .ti{font-size:20px;line-height:1}
+.tabbar button.on{color:var(--brand)}
+
+/* Bracket */
+.bracket{--bgap:22px;display:flex;align-items:stretch;overflow-x:auto;padding:4px 2px 12px}
+.round{display:flex;flex-direction:column;flex:0 0 var(--rw,150px);min-width:var(--rw,150px)}
+.round:not(:last-child){padding-right:var(--bgap)}
+.round h4{font-size:11px;text-transform:uppercase;letter-spacing:.06em;color:var(--muted);text-align:center;margin:0 0 8px;height:14px}
+.rmatches{flex:1;display:flex;flex-direction:column}
+.rmatch{flex:1;display:flex;flex-direction:column;justify-content:center;position:relative}
+.bm{border:1px solid var(--line);border-radius:11px;overflow:hidden;font-size:12.5px;background:var(--surface);margin:7px 0}
+.bm .r{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:0 11px;min-height:36px}
+.bm .r+.r{border-top:1px solid var(--line)}
+.bm .nm{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-weight:600}
+.bm .sc{display:flex;gap:7px;flex:none}
+.bm .sc b{display:inline-block;min-width:15px;text-align:center;font-weight:800;font-variant-numeric:tabular-nums;color:var(--muted)}
+.bm .r.win{background:var(--ok-soft)}
+.bm .r.win .nm{font-weight:800}
+.bm .r.win .sc b{color:var(--fg)}
+.round:not(:last-child) .rmatch::after{content:'';position:absolute;top:50%;left:100%;width:calc(var(--bgap)/2);height:2px;margin-top:-1px;background:var(--line)}
+.round:not(:last-child) .rmatch::before{content:'';position:absolute;left:calc(100% + var(--bgap)/2);width:calc(var(--bgap)/2);border-left:2px solid var(--line)}
+.round:not(:last-child) .rmatch:nth-child(odd)::before{top:50%;bottom:0;border-bottom:2px solid var(--line)}
+.round:not(:last-child) .rmatch:nth-child(even)::before{top:0;bottom:50%;border-top:2px solid var(--line)}
+
+/* Segmented control */
+.seg{display:flex;background:var(--surface-2);border-radius:12px;padding:4px;gap:4px;margin:6px 0 14px}
+.seg button{flex:1;border:none;background:none;padding:9px;border-radius:9px;font-weight:700;font-size:13px;color:var(--muted)}
+.seg button.on{background:var(--surface);color:var(--fg);box-shadow:0 1px 4px rgba(0,0,0,.08)}
+
+/* Phase flow */
+.phase{display:flex;gap:12px;align-items:flex-start}
+.phase .num{width:30px;height:30px;border-radius:9px;background:var(--brand-soft);color:var(--brand);
+  font-weight:800;display:grid;place-items:center;flex:none;font-family:var(--font-display)}
+.phase+.phase{margin-top:14px}
+.phase b{font-family:var(--font-display);font-size:15px}
+.phase small{display:block;color:var(--muted);margin-top:2px;font-size:13px}
+.phase .line{width:2px;background:var(--line);margin:4px auto 0;height:14px}
+
+/* Toast */
+.toast{position:fixed;left:50%;bottom:86px;transform:translateX(-50%) translateY(20px);z-index:60;
+  background:var(--ink);color:#fff;padding:12px 18px;border-radius:12px;font-weight:600;font-size:13.5px;
+  box-shadow:var(--shadow);opacity:0;pointer-events:none;transition:.25s;max-width:360px;text-align:center}
+.toast.show{opacity:1;transform:translateX(-50%) translateY(0)}
+:root[data-theme="dark"] .toast,:root:not([data-theme="light"]) .toast{background:#000}
+
+.demo-note{font-size:11.5px;color:var(--muted);text-align:center;padding:10px 20px 2px}
+.summary-row{display:flex;justify-content:space-between;padding:10px 0;border-top:1px solid var(--line);font-size:14px}
+.summary-row:first-child{border-top:none}
+.summary-row b{font-weight:700}
+.list-item{display:flex;align-items:center;gap:12px;padding:14px;border:1px solid var(--line);border-radius:14px}
+.list-item+.list-item{margin-top:10px}
+.tour{margin-top:10px}
+.tour-actions{display:flex;gap:8px;justify-content:flex-end;margin-top:6px}
+.tbtn{border:1px solid var(--line);background:var(--surface);color:var(--muted);font-family:inherit;font-weight:700;font-size:11.5px;padding:6px 11px;border-radius:9px;cursor:pointer}
+.tbtn:hover{color:var(--fg);border-color:var(--muted)}
+.tcard{cursor:pointer}
+.empty{text-align:center;padding:38px 16px;color:var(--muted);font-size:30px}
+.empty p{font-size:13.5px;font-weight:600;margin:12px 0 0;line-height:1.5}
+.list-item .ic{width:42px;height:42px;border-radius:12px;background:var(--brand-soft);color:var(--brand);
+  display:grid;place-items:center;font-size:19px;flex:none}
+.list-item b{font-family:var(--font-display);font-size:15px}
+.list-item small{color:var(--muted);display:block}
+.list-item .chev{margin-left:auto;color:var(--muted)}
+.list-item .ic.has-img{background:none;padding:0;overflow:hidden}
+.list-item .ic.has-img img{width:100%;height:100%;object-fit:cover}
+.phase-mini{display:flex;align-items:center;gap:5px;margin-top:5px;font-size:11px;font-weight:800;color:var(--brand)}
+.phase-mini .bars{display:inline-flex;gap:3px}
+.phase-mini .ps{width:15px;height:5px;border-radius:3px;background:var(--line)}
+.phase-mini .ps.done{background:var(--ok)}
+.phase-mini .ps.cur{background:var(--brand)}
+/* Sélecteur d'image (création) */
+.img-pick{display:block;width:100%;height:128px;border:1.5px dashed var(--line);border-radius:14px;
+  overflow:hidden;cursor:pointer;background:var(--surface-2)}
+.img-pick img{width:100%;height:100%;object-fit:cover;display:block}
+.img-ph{width:100%;height:100%;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:5px;color:var(--muted)}
+.img-ph small{font-size:12.5px;font-weight:600}
+/* Bottom sheet (pop-up) */
+.sheet-backdrop{position:absolute;inset:0;z-index:80;background:rgba(15,18,40,.46);
+  display:flex;align-items:flex-end;opacity:0;transition:opacity .22s ease}
+.sheet-backdrop.show{opacity:1}
+.sheet{position:relative;width:100%;max-height:90%;overflow-y:auto;overflow-x:hidden;background:var(--surface-2);
+  border-radius:22px 22px 0 0;padding:8px 18px 22px;box-shadow:0 -12px 44px rgba(0,0,0,.26);
+  transform:translateY(100%);transition:transform .28s cubic-bezier(.22,1,.36,1)}
+.sheet-backdrop.show .sheet{transform:translateY(0)}
+.sheet .grab{width:40px;height:4px;border-radius:3px;background:var(--line);margin:4px auto 10px}
+.sheet-close{position:absolute;top:12px;right:14px;z-index:2;width:30px;height:30px;border:none;border-radius:50%;
+  background:var(--surface);color:var(--muted);font-size:18px;line-height:1;cursor:pointer;display:grid;place-items:center;
+  box-shadow:0 1px 3px rgba(0,0,0,.08)}
+.sheet-close:hover{color:var(--fg)}
+.sheet h3.sheet-title{font-size:18px;margin:2px 0 12px}
+
+/* Petits écrans (< 392px) : on resserre pour éviter les débordements */
+@media (max-width:391px){
+  body{font-size:14.5px}
+  .screen{padding:14px max(12px,env(safe-area-inset-left,0)) 22px max(12px,env(safe-area-inset-right,0))}
+  .topbar{padding:12px max(12px,env(safe-area-inset-left,0)) 10px max(12px,env(safe-area-inset-right,0))}
+  .card{padding:13px;border-radius:15px}
+  .hero{padding:20px 17px;border-radius:22px}
+  .hero h1{font-size:25px}
+  .btn{padding:13px 14px;font-size:14.5px;border-radius:13px}
+  .btn.sm{padding:9px 11px;font-size:12.5px}
+  .btn-row{gap:8px}
+  .grid2{gap:8px}
+  .entry{gap:11px;padding:13px}
+  .entry .ic{width:40px;height:40px;border-radius:11px;font-size:19px}
+  .list-item{gap:10px;padding:12px}
+  .list-item .ic{width:38px;height:38px;border-radius:11px}
+  .seg{gap:3px;padding:3px}
+  .seg button{padding:8px 4px;font-size:12.5px}
+  .logo{font-size:17px;gap:8px}
+  .logo .mark{width:32px;height:32px}
+  .sheet{padding:8px 14px 20px}
+  .pool .ph select,.pool li select{max-width:108px}
+  /* Rétrécir le texte pour garder la mise en page sur une ligne */
+  .entry b,.list-item b{font-size:14px}
+  .entry small,.list-item small{font-size:11.5px}
+  .list-item small{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .badge{font-size:10px;padding:3px 7px;white-space:nowrap}
+  .summary-row{font-size:13px}
+  .lead{font-size:13.5px}
+  .eyebrow{font-size:11px}
+  .chip{font-size:10.5px}
+  .match .teams .t{font-size:13.5px}
+}
+@media (max-width:359px){
+  body{font-size:13.5px}
+  .btn{font-size:13.5px;padding:12px 12px}
+  .entry b,.list-item b{font-size:13px}
+  .entry small,.list-item small{font-size:11px}
+  .hero h1{font-size:22px}
+  .logo{font-size:16px}
+}
+</style>
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,600;12..96,700;12..96,800&family=Figtree:wght@400;500;600;700;800&display=swap">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
+
+<div class="app" id="app">
+  <!-- TOP BAR -->
+  <div class="topbar" id="topbar" hidden>
+    <button class="back" id="backBtn" aria-label="Retour">‹</button>
+    <h2 id="topTitle">Titre</h2>
+    <span class="step" id="topStep"></span>
+  </div>
+  <div class="wiz-prog" id="wizProg" hidden></div>
+
+  <!-- SCREENS -->
+  <div class="screen" id="screenHost"></div>
+
+  <!-- TAB BAR -->
+  <div class="tabbar" id="tabbar" hidden></div>
+
+  <!-- BOTTOM SHEET (pop-up) -->
+  <div class="sheet-backdrop" id="sheet" hidden></div>
+</div>
+<div class="toast" id="toast"></div>
+
+<script>
+/* ---------------- Marque & icônes ---------------- */
+const VBO_LOGO = "/_blob/c576c3db199db3e112b716b3d071edd1"; // logo Volley-Ball Ollioulais (fond transparent)
+const APP_NAME = "Tournoi VBO";
+// Petits pictos SVG (hérités de la couleur courante via currentColor)
+const ICON = {
+  // sifflet d'arbitre
+  whistle:`<svg viewBox="0 0 24 24" width="1em" height="1em" fill="currentColor" aria-hidden="true"><path d="M3 9a5 5 0 0 1 5-5h9.5a1.5 1.5 0 0 1 0 3H17l2.6 2.2a1 1 0 0 1-.3 1.72l-2.1.7A6 6 0 1 1 8 9H3Zm6 1.5A3.5 3.5 0 1 0 12.5 14 3.5 3.5 0 0 0 9 10.5Zm0 1.6A1.9 1.9 0 1 1 7.1 14 1.9 1.9 0 0 1 9 12.1Z"/></svg>`,
+  // capitaine : brassard avec un « C »
+  captain:`<svg viewBox="0 0 24 24" width="1em" height="1em" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="8.2"/><path d="M14.4 9.6a3.2 3.2 0 1 0 0 4.8" fill="none"/></svg>`,
+  // référent gymnase : badge/lanière
+  referee:`<svg viewBox="0 0 24 24" width="1em" height="1em" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 3h6l-1 3h-4L9 3Z"/><rect x="5" y="6" width="14" height="15" rx="3"/><circle cx="12" cy="13" r="2.4"/><path d="M8.5 18.5a3.6 3.6 0 0 1 7 0"/></svg>`,
+  // organisateur : réglages
+  organizer:`<svg viewBox="0 0 24 24" width="1em" height="1em" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 15a3 3 0 1 0 0-6 3 3 0 0 0 0 6Z"/><path d="M19.4 13a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.6 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.6a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1Z"/></svg>`,
+  // installer : flèche vers un téléphone
+  install:`<svg viewBox="0 0 24 24" width="1em" height="1em" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3v10"/><path d="m8 11 4 4 4-4"/><path d="M5 17v2a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-2"/></svg>`,
+  // suspendre / pause
+  pause:`<svg viewBox="0 0 24 24" width="1em" height="1em" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="7" y="5" width="3.2" height="14" rx="1"/><rect x="13.8" y="5" width="3.2" height="14" rx="1"/></svg>`,
+  // supprimer : corbeille
+  trash:`<svg viewBox="0 0 24 24" width="1em" height="1em" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 7h16"/><path d="M9 7V4h6v3"/><path d="M6 7l1 13a2 2 0 0 0 2 2h6a2 2 0 0 0 2-2l1-13"/><path d="M10 11v6M14 11v6"/></svg>`,
+};
+function logoMark(cls){ return `<span class="mark${cls?' '+cls:''}"><img src="${VBO_LOGO}" alt="Logo Volley-Ball Ollioulais"></span>`; }
+const EYE_ON=`<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7-10-7-10-7Z"/><circle cx="12" cy="12" r="3"/></svg>`;
+const EYE_OFF=`<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M10.6 6.2A9.8 9.8 0 0 1 12 5c6.5 0 10 7 10 7a17.6 17.6 0 0 1-3.2 3.9M6.3 6.3C3.4 8 2 12 2 12s3.5 7 10 7a9.7 9.7 0 0 0 4.2-.9"/><path d="M9.9 9.9a3 3 0 0 0 4.2 4.2"/><path d="m3 3 18 18"/></svg>`;
+// Champ mot de passe avec œil de révélation
+function pwdField(label,id,value){
+  return `<label class="field"><span>${label}</span>
+    <span class="pwd-wrap">
+      <input id="${id}" type="password" value="${value||''}">
+      <button type="button" class="pwd-eye" aria-label="Afficher le mot de passe" onclick="togglePwd(this,'${id}')">${EYE_ON}</button>
+    </span></label>`;
+}
+window.togglePwd=(btn,id)=>{
+  const inp=document.getElementById(id); if(!inp) return;
+  const show=inp.type==='password';
+  inp.type=show?'text':'password';
+  btn.innerHTML=show?EYE_OFF:EYE_ON;
+  btn.setAttribute('aria-label', show?'Masquer le mot de passe':'Afficher le mot de passe');
+};
+/* ---------- Installation PWA ---------- */
+let deferredInstall=null;
+window.addEventListener&&window.addEventListener('beforeinstallprompt',(e)=>{ e.preventDefault(); deferredInstall=e; });
+function isStandalone(){
+  try{ return (window.matchMedia&&window.matchMedia('(display-mode: standalone)').matches) || window.navigator.standalone===true; }catch(e){ return false; }
+}
+function installPlatform(){
+  const ua=(navigator.userAgent||'').toLowerCase();
+  if(/iphone|ipad|ipod/.test(ua) || (/\bmac/.test(ua)&&navigator.maxTouchPoints>1)) return 'ios';
+  if(/android/.test(ua)) return 'android';
+  return 'other';
+}
+window.installApp=async ()=>{
+  if(deferredInstall){
+    deferredInstall.prompt();
+    try{ const r=await deferredInstall.userChoice; toast(r&&r.outcome==='accepted'?'✅ Installation lancée':'Installation annulée'); }catch(e){}
+    deferredInstall=null; return;
+  }
+  const plat=installPlatform();
+  const iosSteps=`<ol style="margin:0;padding-left:18px;line-height:1.7;font-size:13.5px">
+    <li>Ouvrez cette page dans <b>Safari</b>.</li>
+    <li>Touchez le bouton <b>Partager</b> <span style="font-size:15px">􀈂</span> (carré avec une flèche).</li>
+    <li>Choisissez <b>« Sur l'écran d'accueil »</b>.</li>
+    <li>Validez avec <b>Ajouter</b>.</li></ol>`;
+  const androidSteps=`<ol style="margin:0;padding-left:18px;line-height:1.7;font-size:13.5px">
+    <li>Ouvrez cette page dans <b>Chrome</b>.</li>
+    <li>Touchez le menu <b>⋮</b> en haut à droite.</li>
+    <li>Choisissez <b>« Installer l'application »</b> (ou « Ajouter à l'écran d'accueil »).</li>
+    <li>Validez avec <b>Installer</b>.</li></ol>`;
+  const otherSteps=`<p style="font-size:13.5px;line-height:1.6;margin:0">Depuis votre téléphone, ouvrez cette page dans le navigateur puis utilisez le menu du navigateur pour <b>« Ajouter à l'écran d'accueil »</b>. L'application s'ouvrira alors en plein écran, comme une appli native.</p>`;
+  const steps = plat==='ios'?iosSteps : plat==='android'?androidSteps : otherSteps;
+  openSheet(`<h3 style="font-size:18px;margin:2px 0 4px;font-family:var(--font-display)">Installer Tournoi VBO</h3>
+    <p class="muted" style="font-size:12.5px;margin:0 0 14px">Ajoutez l'application à votre écran d'accueil pour un accès instantané, en plein écran et hors connexion.</p>
+    ${steps}
+    <button class="btn" style="margin-top:18px;width:100%" onclick="closeSheet()">J'ai compris</button>`);
+};
+/* Bloc « Installer l'application » réutilisable. variant:'full' = séparateur + bouton + note ; 'inline' = bouton seul compact. */
+function installBlock(variant){
+  if(isStandalone()) return '';
+  if(variant==='inline'){
+    return `<button class="btn ghost" style="width:100%;margin-top:12px;display:flex;align-items:center;justify-content:center;gap:8px" onclick="installApp()"><span style="display:inline-flex;color:var(--brand)">${ICON.install}</span> Installer l'application</button>`;
+  }
+  return `<div style="display:flex;align-items:center;gap:10px;margin:18px 2px 0"><div style="flex:1;height:1px;background:var(--line)"></div><small class="muted">Sur téléphone</small><div style="flex:1;height:1px;background:var(--line)"></div></div>
+    <button class="btn ghost" style="width:100%;margin-top:12px;display:flex;align-items:center;justify-content:center;gap:8px" onclick="installApp()"><span style="display:inline-flex;color:var(--brand)">${ICON.install}</span> Installer l'application</button>
+    <p class="muted" style="text-align:center;font-size:11.5px;margin:8px 4px 0">Ajoutez Tournoi VBO à votre écran d'accueil pour y accéder comme une appli.</p>`;
+}
+/* ---------------- Mock data ---------------- */
+const GYMS = [
+  {id:'g1', name:'Gymnase Central', color:'#2e8b57'},
+  {id:'g2', name:'Gymnase des Sports', color:'#c98a12'},
+  {id:'g3', name:'Gymnase Nord', color:'#2f7f8f'},
+  {id:'g4', name:'Gymnase Sud', color:'#7a5bbf'},
+];
+const POOL_LETTERS = Array.from({length:26},(_,i)=>String.fromCharCode(65+i));
+const TEAM_NAMES = [
+  'Les Smasheurs','Block Party','Spike Force','Net Ninjas','Ace Attack','Dig Dynasty',
+  'Volley Vipères','Côte Smash','Les Pistons','Rotation 6','Service Compris','Les Libéros',
+  'Attaque Rapide','Mur du Son','Les Passeurs','Contre Zone','Set & Match','Team Réception',
+  'Les Ailiers','Fond de Court','Double Touche','Les Centraux','Top Spin','Les Diagonales'
+];
+// w = poids pour les têtes de série : Nationale > Régionale > Départ./Loisirs > Jeunes.
+const LEVELS=[
+  {id:'nat',label:'Nationale',short:'Nat',color:'#e23b4e',w:4},
+  {id:'reg',label:'Régionale',short:'Rég',color:'#e8a000',w:3},
+  {id:'dep',label:'Départ./Loisirs',short:'Dép',color:'#17a673',w:2},
+  {id:'jeu',label:'Jeunes (U18)',short:'U18',color:'#2e4be0',w:1},
+];
+const DEMO_LEVELS=['nat','reg','nat','dep','reg','jeu','dep','nat','jeu','reg','dep','reg','nat','dep','jeu','reg','dep','jeu','reg','dep','dep','dep','reg','jeu'];
+function levelMeta(id){return LEVELS.find(l=>l.id===id)||LEVELS[2];}
+// 24 teams -> 6 pools of 4, 3 pools per gym
+const state = {
+  config:{
+    name:'Open de Volley · Printemps',
+    date:new Date().toISOString().slice(0,10), place:'Lyon', image:null,
+    teams:24, gyms:2, courts:6, courtsPerGym:[3,3], pools:6, teamsPerPool:4,
+    sets:1, pointsPerSet:25, twoPointGap:true, timed:false, setMinutes:15,
+    winPts:3, lossPts:0,
+    phaseConsolante:true, finalStart:'auto', distribution:'snake',
+    scheduleMode:'rotation', splitPhase2ByGym:false,
+    startTime:'09:00', roundMinutes:20, setupMinutes:10,
+  },
+  pools:[],
+  teams: TEAM_NAMES.map((name,i)=>({name, level: DEMO_LEVELS[i]||'dep'})),
+  authed:false,
+  captainTeam:null,
+  tournaments:[
+    {id:'t_live', status:'live', archived:false, step:6, livePhase:'poules2', config:{name:'Open de Volley · Printemps', date:new Date().toISOString().slice(0,10), place:'Lyon', teams:24, phaseConsolante:true}, teams:[], gyms:['Gymnase Central','Gymnase des Sports'], joinCode:'VB-7K2P', launchedAt:Date.now()-72e5},
+    {id:'t_hiver', status:'closed', archived:false, step:3, config:{name:'Tournoi d\'hiver 2025', date:'2025-12-14', place:'Lyon', teams:16}, teams:[], gyms:['Gymnase Central'], savedAt:Date.now()-5e9, closedAt:Date.now()-45e8},
+    {id:'t_ete', status:'closed', archived:true, step:3, config:{name:'Open d\'été 2025', date:'2025-07-05', place:'Lyon', teams:20}, teams:[], gyms:[], savedAt:Date.now()-9e9, closedAt:Date.now()-8e9},
+  ],
+  currentDraftId:null,
+  dashView:'active',
+  joinCode:null,
+  captainList:[],
+  livePhase:'brassage',
+  referents:[
+    {id:'r1', name:'Julie Renaud', email:'julie.renaud@gmail.com', password:'VBO-7H4K2M', createdAt:Date.now()-864e5, status:'active'},
+    {id:'r2', name:'Marc Teyssier', email:'marc.teyssier@gmail.com', password:'VBO-3K9P4D', createdAt:Date.now()-3456e5, status:'suspended'},
+  ],
+  refSession:null,
+};
+function fmtDate(iso,long){
+  if(!iso) return '';
+  const d=new Date(iso+'T00:00'); if(isNaN(d)) return iso;
+  const ms=['janv.','févr.','mars','avr.','mai','juin','juil.','août','sept.','oct.','nov.','déc.'];
+  const ml=['janvier','février','mars','avril','mai','juin','juillet','août','septembre','octobre','novembre','décembre'];
+  return long?`${d.getDate()} ${ml[d.getMonth()]} ${d.getFullYear()}`:`${d.getDate()} ${ms[d.getMonth()]}`;
+}
+function genJoinCode(){ const a='ABCDEFGHJKLMNPQRSTUVWXYZ23456789'; let s=''; for(let i=0;i<4;i++) s+=a[Math.floor(Math.random()*a.length)]; return 'VB-'+s; }
+function shuffle(a){for(let i=a.length-1;i>0;i--){const j=Math.floor(Math.random()*(i+1));[a[i],a[j]]=[a[j],a[i]];}return a;}
+function rebuildPools(){
+  const P=state.config.pools, T=state.config.teamsPerPool, G=state.config.gyms;
+  const cpg=state.config.courtsPerGym||[];
+  const pools=[];
+  for(let i=0;i<P;i++) pools.push({letter:POOL_LETTERS[i]||('P'+(i+1)), gym:null, court:1, teams:[]});
+  const perGym=Math.ceil(P/G);
+  // Chaque gymnase a ses propres terrains, numérotés 1..N dans chaque gymnase
+  const gymCourts=[];
+  for(let gi=0;gi<G;gi++) gymCourts.push(Math.max(1, cpg[gi]||1));
+  pools.forEach((p,i)=>{
+    const gi=Math.min(G-1, Math.floor(i/perGym));
+    p.gym = GYMS[gi].id;
+    const idxInGym = i - gi*perGym;              // rang de la poule dans son gymnase
+    p.court = (idxInGym % gymCourts[gi]) + 1;    // terrains locaux au gymnase : 1, 2, 3…
+  });
+  // Liste des terrains disponibles par gymnase (pour le sélecteur manuel)
+  state.courtsByGym={};
+  for(let gi=0;gi<G;gi++){ state.courtsByGym[GYMS[gi].id]=Array.from({length:gymCourts[gi]},(_,k)=>k+1); }
+  // On part des équipes inscrites avec leur niveau
+  let order = state.teams.slice(0, P*T).map(x=>({t:x.name, level:x.level}));
+  if(state.config.distribution==='random') shuffle(order);
+  else if(state.config.distribution==='snake') order.sort((a,b)=> levelMeta(b.level).w - levelMeta(a.level).w); // tête de série = niveau le plus fort
+  if(state.config.distribution==='manual'){
+    order.forEach((o,idx)=> pools[Math.floor(idx/T)].teams.push(o));
+  } else {
+    // Serpentin : poule A←nº1, B←nº2 … puis on repart en sens inverse
+    let idx=0;
+    for(let r=0;r<T;r++){
+      const seq = r%2===0 ? [...Array(P).keys()] : [...Array(P).keys()].reverse();
+      for(const pi of seq){ if(idx<order.length) pools[pi].teams.push(order[idx++]); }
+    }
+  }
+  state.pools=pools;
+  state.phasePrincipal=null; state.phaseConsolante=null; // recalculées à la demande
+  buildSchedule();
+}
+rebuildPools();
+
+// Matchs d'un capitaine dérivés du planning réel (tous : joués, en cours, à venir)
+function captainMatches(team){
+  return (state.schedule||[]).map((m,i)=>{
+    const ov=m.capState; // saisie du capitaine conservée entre deux rendus
+    const base = m.status==='done'?'valid' : m.status==='live'?'live' : 'todo';
+    return {
+      id:'cm'+i, round:m.r, time:m.time, pool:m.pool, court:m.court, gym:m.gym, ref:m.ref,
+      a:m.a, b:m.b,
+      sa: ov&&ov.status==='valid'?ov.sa:m.sa,
+      sb: ov&&ov.status==='valid'?ov.sb:m.sb,
+      sets: ov&&ov.status==='valid'?ov.sets:m.sets,
+      status: ov?ov.status:base,
+      mine: ov?ov.mine:undefined,
+    };
+  }).filter(m=>m.a===team||m.b===team);
+}
+function captainRefMatches(team){
+  return (state.schedule||[]).map((m,i)=>({m,i})).filter(x=>x.m.ref===team).map(({m,i})=>({
+    id:'rm'+i, round:m.r, time:m.time, pool:m.pool, court:m.court, gym:m.gym,
+    a:m.a, b:m.b, status: m.status==='done'?'valid':m.status==='live'?'live':'todo',
+  }));
+}
+// Planning global (organisateur) — généré depuis les poules/terrains réels
+function gymName(id){ const g=GYMS.find(x=>x.id===id); return g?g.name:id; }
+function roundRobin(list){
+  const a=list.slice(); if(a.length%2) a.push(null);
+  const n=a.length, rounds=[];
+  for(let r=0;r<Math.max(0,n-1);r++){
+    const pairs=[];
+    for(let i=0;i<n/2;i++){ if(a[i]&&a[n-1-i]) pairs.push([a[i],a[n-1-i]]); }
+    rounds.push(pairs);
+    a.splice(1,0,a.pop());
+  }
+  return rounds;
+}
+var schedHoraire=null; // horaire actif pendant la construction d'un planning (null → brassage/config)
+function slotTime(r){
+  const c=schedHoraire||state.config||{};
+  const parts=String(c.startTime||'09:00').split(':');
+  const sh=(+parts[0])||9, sm=(+parts[1])||0;
+  const per=((+c.roundMinutes)||20)+((+c.setupMinutes)||10);
+  const t=(sh*60+sm)+(r-1)*per, h=Math.floor(t/60)%24, m=t%60;
+  return `${String(h).padStart(2,'0')}:${String(m).padStart(2,'0')}`;
+}
+// Score de démo, cohérent avec le nombre de sets configuré
+function demoScore(court, tour){
+  const nSets=Math.max(1, state.config.sets||1);
+  if(tour===1){ const sets=[]; for(let s=0;s<nSets;s++) sets.push([25, 18+((court+s*2)%7)]); return {status:'done', sa:sets[0][0], sb:sets[0][1], sets}; }
+  if(tour===2){ const sets=[]; for(let s=0;s<nSets-1;s++) sets.push([25, 20+((court+s)%5)]); const cur=[14+((court)%9), 11+((court*2)%12)]; sets.push(cur); return {status:'live', sa:cur[0], sb:cur[1], sets}; }
+  return {status:'upcoming', sa:undefined, sb:undefined, sets:null};
+}
+// Affichage d'un score (1 set → ancienne mise en forme ; plusieurs sets → set par set)
+function scoreSC(m){
+  const sets=(m.sets&&m.sets.length)?m.sets : (m.sa!=null?[[m.sa,m.sb]]:null);
+  if(!sets) return `<span class="vs">vs</span>`;
+  if(sets.length===1) return `<span>${sets[0][0]??'–'}</span><span class="vs">–</span><span>${sets[0][1]??'–'}</span>`;
+  return `<span style="font-variant-numeric:tabular-nums;font-weight:800;font-size:12.5px;white-space:nowrap">${sets.map(([a,b])=>`${a}-${b}`).join(' · ')}</span>`;
+}
+// Vainqueur d'un match (jamais de nul au volley) : d'abord les sets gagnés,
+// puis, si le nombre de sets est pair et qu'on est à égalité de sets, le total de points.
+// Renvoie 'a', 'b', ou null si le match n'est pas joué.
+function matchWinner(m){
+  const sets=(m.sets&&m.sets.length)?m.sets : (m.sa!=null?[[m.sa,m.sb]]:null);
+  if(!sets) return null;
+  let wa=0, wb=0, ta=0, tb=0;
+  for(const [a,b] of sets){ if(a==null||b==null) continue; ta+=a; tb+=b; if(a>b) wa++; else if(b>a) wb++; }
+  if(wa!==wb) return wa>wb?'a':'b';
+  return ta>=tb?'a':'b'; // départage au total de points marqués
+}
+function wonBy(m, team){ const w=matchWinner(m); return w && ((w==='a'&&m.a===team)||(w==='b'&&m.b===team)); }
+function gymCourtList(gymId, pools){
+  if(state.courtsByGym && state.courtsByGym[gymId] && state.courtsByGym[gymId].length) return state.courtsByGym[gymId].slice();
+  const s=[...new Set((pools||[]).filter(p=>p.gym===gymId).map(p=>p.court))].sort((a,b)=>a-b);
+  return s.length?s:[1];
+}
+function buildSchedule(){ state.schedule = makeSchedule(state.pools, horaireFor('brassage')); }
+function makeSchedule(poolsIn, hor){
+  const pools=(poolsIn||[]).filter(p=>p.teams&&p.teams.length>=2);
+  const prev=schedHoraire; schedHoraire=hor||null;
+  const sched = (state.config.scheduleMode==='pool') ? makeSchedulePool(pools) : makeScheduleRotation(pools);
+  assignReferees(sched, pools);
+  schedHoraire=prev;
+  return sched;
+}
+// Arbitrage : à chaque tour, une équipe au repos arbitre un match.
+// Contraintes : un arbitre ne joue pas ce tour-là, arbitre au plus un match par tour,
+// et arbitre uniquement dans le gymnase où son équipe joue.
+function assignReferees(sched, pools){
+  const teamGym={}; // chaque équipe est rattachée au gymnase où elle joue
+  sched.forEach(m=>{ if(m.a) teamGym[m.a]=m.gym; if(m.b) teamGym[m.b]=m.gym; });
+  const refCount={}; // nb de matchs déjà arbitrés par équipe (pour l'équité)
+  Object.keys(teamGym).forEach(t=>{ refCount[t]=0; });
+  const byR={};
+  sched.forEach(m=>{ (byR[m.r]=byR[m.r]||[]).push(m); });
+  Object.keys(byR).sort((a,b)=>a-b).forEach(r=>{
+    const matches=byR[r];
+    const playing=new Set();
+    matches.forEach(m=>{ playing.add(m.a); playing.add(m.b); });
+    // arbitres disponibles ce tour, regroupés par gymnase
+    const idleByGym={};
+    Object.keys(teamGym).forEach(t=>{ if(!playing.has(t)){ const g=teamGym[t]; (idleByGym[g]=idleByGym[g]||[]).push(t); } });
+    const usedThisRound=new Set();
+    matches.forEach(m=>{
+      const pool=(idleByGym[m.gym]||[]).filter(t=>!usedThisRound.has(t));
+      // on choisit l'équipe au repos qui a le MOINS arbitré jusqu'ici (équité)
+      pool.sort((a,b)=> (refCount[a]-refCount[b]) || a.localeCompare(b));
+      const pick=pool[0]||null;
+      m.ref=pick; // même gymnase que le match, sinon pas d'arbitre
+      if(pick){ refCount[pick]++; usedThisRound.add(pick); }
+    });
+  });
+}
+// Mode « rotation » : chaque tour remplit TOUS les terrains disponibles de chaque gymnase.
+// Les matchs d'une même poule (qui n'opposent jamais deux fois la même équipe dans un tour)
+// peuvent occuper plusieurs terrains si le gymnase en a plus que de poules.
+function makeScheduleRotation(pools){
+  const sched=[];
+  const byGym={};
+  pools.forEach(p=>{ (byGym[p.gym]=byGym[p.gym]||[]).push(p); });
+  const gymIndex=id=>GYMS.findIndex(g=>g.id===id);
+  Object.keys(byGym).sort((a,b)=>gymIndex(a)-gymIndex(b)).forEach(gym=>{
+    const courts=gymCourtList(gym, pools);
+    const C=courts.length;
+    const queues=byGym[gym].map(p=>({p, rounds:roundRobin(p.teams.map(x=>x.t)), ri:0, off:0}));
+    const K=queues.length;
+    const cap=Math.max(1, Math.ceil(C/Math.max(1,K))); // nb de terrains qu'une poule peut occuper par tour
+    let tour=0, guard=0;
+    while(queues.some(q=>q.ri<q.rounds.length) && guard++<1000){
+      tour++;
+      let ci=0;
+      const rot=(K>C)?(tour-1):0; // on ne fait tourner l'ordre des poules que si elles doivent se partager les terrains
+      for(let s=0; s<K && ci<C; s++){
+        const q=queues[(rot+s)%K];
+        if(q.ri>=q.rounds.length) continue;
+        const round=q.rounds[q.ri];
+        let placed=0;
+        while(q.off<round.length && ci<C && placed<cap){
+          const [a,b]=round[q.off++]; placed++;
+          const court=courts[ci++];
+          const sc=demoScore(court, tour);
+          sched.push({r:tour, time:slotTime(tour), gym:gymName(gym), court, pool:q.p.letter, a, b, sa:sc.sa, sb:sc.sb, sets:sc.sets, status:sc.status});
+        }
+        if(q.off>=round.length){ q.ri++; q.off=0; } // la poule ne démarre pas un 2e tour dans le même créneau
+      }
+    }
+  });
+  sched.sort((x,y)=> x.r-y.r || (x.gym<y.gym?-1:x.gym>y.gym?1:0) || x.court-y.court);
+  return sched;
+}
+// Mode « poule par poule » : une poule occupe tous les terrains de son gymnase pour un tour, puis l'autre poule
+function makeSchedulePool(pools){
+  const sched=[];
+  const byGym={};
+  pools.forEach(p=>{ (byGym[p.gym]=byGym[p.gym]||[]).push(p); });
+  const gymPlans={}; let maxTours=0;
+  Object.keys(byGym).forEach(gym=>{
+    const courts=gymCourtList(gym, pools);
+    const poolRounds=byGym[gym].map(p=>({p, rounds:roundRobin(p.teams.map(x=>x.t)), idx:0}));
+    const groups=[]; // chaque groupe = les matchs d'un même tour sur ce gymnase
+    let remaining=poolRounds.reduce((a,q)=>a+q.rounds.length,0), gi=0, guard=0;
+    while(remaining>0 && guard++<500){
+      let picked=null;
+      for(let t=0;t<poolRounds.length;t++){ const q=poolRounds[(gi+t)%poolRounds.length]; if(q.idx<q.rounds.length){ picked=q; gi=(gi+t+1)%poolRounds.length; break; } }
+      if(!picked) break;
+      const round=picked.rounds[picked.idx++]; remaining--;
+      // si la poule a plus de matchs simultanés que de terrains, on découpe en sous-tours
+      for(let off=0; off<round.length; off+=courts.length){
+        const chunk=round.slice(off, off+courts.length);
+        groups.push(chunk.map((pair,ci)=>({pool:picked.p, pair, court:courts[ci]})));
+      }
+    }
+    gymPlans[gym]=groups; maxTours=Math.max(maxTours, groups.length);
+  });
+  for(let t=0;t<maxTours;t++){
+    Object.keys(gymPlans).forEach(gym=>{
+      const grp=gymPlans[gym][t]; if(!grp) return;
+      grp.forEach(({pool,pair,court})=>{
+        const [a,b]=pair; const sc=demoScore(court, t+1);
+        sched.push({r:t+1, time:slotTime(t+1), gym:gymName(gym), court, pool:pool.letter, a, b, sa:sc.sa, sb:sc.sb, sets:sc.sets, status:sc.status});
+      });
+    });
+  }
+  sched.sort((x,y)=> x.r-y.r || (x.gym<y.gym?-1:x.gym>y.gym?1:0) || x.court-y.court);
+  return sched;
+}
+
+/* ---------- Phase 2 (Principale / Consolante) & phases finales ---------- */
+function distributeCourts(pools, forceGym){
+  const G=state.config.gyms, cpg=state.config.courtsPerGym||[];
+  if(forceGym!=null){ // toute la catégorie dans un seul gymnase
+    const gi=Math.min(G-1, forceGym), c=Math.max(1, cpg[gi]||1);
+    pools.forEach((p,i)=>{ p.gym=GYMS[gi].id; p.court=(i%c)+1; });
+    return;
+  }
+  const P=pools.length, perGym=Math.ceil(P/Math.max(1,G));
+  const gymCourts=[];
+  for(let gi=0;gi<G;gi++) gymCourts.push(Math.max(1,cpg[gi]||1));
+  pools.forEach((p,i)=>{ const gi=Math.min(G-1,Math.floor(i/perGym)); p.gym=GYMS[gi].id; const k=i-gi*perGym; p.court=(k%gymCourts[gi])+1; });
+}
+function snakeSeed(order,P,T){
+  const pools=[]; for(let i=0;i<P;i++) pools.push({letter:POOL_LETTERS[i]||('P'+(i+1)),gym:null,court:1,teams:[]});
+  let idx=0;
+  for(let r=0;r<T;r++){ const seq=r%2===0?[...Array(P).keys()]:[...Array(P).keys()].reverse(); for(const pi of seq){ if(idx<order.length) pools[pi].teams.push(order[idx++]); } }
+  return pools;
+}
+// 1ers & 2es de chaque poule → Principale ; le reste → Consolante
+function splitQualifiers(pools){
+  const principal=[], consolante=[];
+  (pools||[]).forEach(p=>{
+    poolStandingRows(p).forEach((r,i)=>{
+      const lvl=(p.teams.find(x=>x.t===r.t)||{}).level||'dep';
+      (i<2?principal:consolante).push({t:r.t, level:lvl, seed:i, from:p.letter});
+    });
+  });
+  return {principal, consolante};
+}
+function makeCategory(teams, forceGym){
+  const T=state.config.teamsPerPool||4;
+  const order=teams.slice().sort((a,b)=> a.seed-b.seed); // têtes de série (1ers) d'abord
+  const P=Math.max(1, Math.round(order.length/T)||1);
+  const pools=snakeSeed(order, P, Math.ceil(order.length/Math.max(1,P)));
+  distributeCourts(pools, forceGym);
+  return {pools, schedule:makeSchedule(pools, horaireFor('poules2'))};
+}
+function buildPhase2(){
+  const q=splitQualifiers(state.pools);
+  // Option : Principale dans le gymnase 1, Consolante dans le gymnase 2 (un organisateur par gymnase)
+  const split = !!state.config.splitPhase2ByGym && state.config.gyms>=2 && state.config.phaseConsolante;
+  state.phasePrincipal=makeCategory(q.principal, split?0:undefined);
+  // Consolante désactivée : les 3es–4es sont éliminés, pas de second tableau
+  state.phaseConsolante = state.config.phaseConsolante ? makeCategory(q.consolante, split?1:undefined) : {pools:[], schedule:[]};
+}
+function ensurePhases(){ if(!state.phasePrincipal||!state.phaseConsolante) buildPhase2(); }
+function phaseData(key){ ensurePhases(); return key==='principal'?state.phasePrincipal : key==='consolante'?state.phaseConsolante : {pools:state.pools, schedule:state.schedule}; }
+// Bracket seedé depuis le classement global d'une catégorie (phase 2)
+function seedOrder(n){ let r=[0]; while(r.length<n){ const m=r.length*2; const nr=[]; r.forEach(s=>{nr.push(s);nr.push(m-1-s);}); r=nr; } return r; }
+function categoryRanking(cat){
+  const rows=[]; cat.pools.forEach(p=> poolStandingRows(p).forEach(r=> rows.push(r)) );
+  rows.sort((a,b)=> b.pts-a.pts || (b.pf-b.pc)-(a.pf-a.pc) || a.t.localeCompare(b.t));
+  return rows;
+}
+function roundNames(K){ const names=[]; let n=K; while(n>1){ names.push(n===2?'Finale':'1/'+(n/2)); n/=2; } return names; }
+function buildBracket(cat){
+  const rank=categoryRanking(cat);
+  let autoK=1; while(autoK*2<=rank.length) autoK*=2; autoK=Math.max(2,autoK);
+  const fs=state.config.finalStart||'auto';
+  // Choix manuel (16=1/8, 8=1/4, 4=1/2) borné au nombre réel de qualifiés
+  let K = fs==='auto' ? autoK : Math.min(+fs||autoK, autoK);
+  K=Math.max(2,K);
+  const seeds=rank.slice(0,K).map(r=>r.t);
+  const order=seedOrder(K);
+  const first=[]; for(let i=0;i<K/2;i++){ first.push([seeds[order[2*i]], seeds[order[2*i+1]]]); }
+  return {K, first, seeds};
+}
+// Simulation de démo : la meilleure tête de série l'emporte à chaque tour.
+// Produit l'arbre complet, le champion/finaliste, et la petite finale (3ᵉ place)
+// disputée par les deux perdants des demi-finales.
+function simulateBracket(br){
+  const strength=t=>{ const i=(br.seeds||[]).indexOf(t); return i<0?999:i; };
+  const mk=(x,y)=> strength(x)<=strength(y)?{a:x,b:y}:{a:y,b:x}; // mieux classé à gauche = vainqueur (démo)
+  let round=br.first.map(([a,b])=>mk(a,b));
+  const rounds=[round];
+  while(round.length>1){
+    const next=[]; for(let i=0;i<round.length;i+=2){ next.push(mk(round[i].a, round[i+1].a)); }
+    round=next; rounds.push(round);
+  }
+  const final=rounds[rounds.length-1][0];
+  let third=null, fourth=null, hasSemis=false, petite=null;
+  if(br.K>=4){
+    const semis=rounds[rounds.length-2];
+    if(semis.length===2){ hasSemis=true; petite=mk(semis[0].b, semis[1].b); third=petite.a; fourth=petite.b; }
+  }
+  return {rounds, champion:final.a, runnerUp:final.b, third, fourth, hasSemis, petite};
+}
+// Organiser pending conflicts
+const conflicts = [
+  {id:'c1', pool:'C', court:3, a:'Les Pistons', b:'Rotation 6', capA:{sa:25,sb:23}, capB:{sa:23,sb:25}},
+];
+// Standings pool A
+const standingsA = [
+  {t:'Les Smasheurs', j:3,g:3,p:0,pts:9, pf:75, pc:55},
+  {t:'Net Ninjas', j:3,g:2,p:1,pts:6, pf:68, pc:62},
+  {t:'Block Party', j:3,g:1,p:2,pts:3, pf:60, pc:66},
+  {t:'Spike Force', j:3,g:0,p:3,pts:0, pf:52, pc:72},
+];
+
+/* ---------------- Router ---------------- */
+const host = document.getElementById('screenHost');
+const topbar = document.getElementById('topbar');
+const tabbar = document.getElementById('tabbar');
+const wizProg = document.getElementById('wizProg');
+let navStack = [];
+
+function go(screen, opts={}){
+  if(!opts.replace) navStack.push({screen,opts});
+  render(screen,opts);
+}
+function back(){
+  navStack.pop();
+  const prev = navStack[navStack.length-1] || {screen:'home',opts:{}};
+  render(prev.screen, prev.opts);
+}
+document.getElementById('backBtn').onclick = back;
+
+function setTop(title, {back=true, step=null, prog=null}={}){
+  if(title===null){ topbar.hidden=true; wizProg.hidden=true; return; }
+  topbar.hidden=false;
+  document.getElementById('topTitle').textContent=title;
+  document.getElementById('backBtn').style.visibility = back?'visible':'hidden';
+  document.getElementById('topStep').textContent = step||'';
+  if(prog){ wizProg.hidden=false; wizProg.innerHTML = prog.map((c)=>`<span class="${c}"></span>`).join(''); }
+  else wizProg.hidden=true;
+}
+
+function toast(msg){
+  const t=document.getElementById('toast'); t.textContent=msg; t.classList.add('show');
+  clearTimeout(t._t); t._t=setTimeout(()=>t.classList.remove('show'),2200);
+}
+
+/* ---------------- Screens ---------------- */
+const C = state.config;
+const screens = {};
+
+screens.home = ()=>{
+  setTop(null); tabbar.hidden=true;
+  host.innerHTML = `
+    <div class="logo" style="margin-bottom:18px">${logoMark()} ${APP_NAME}</div>
+    <div class="hero">
+      <div class="ball"></div>
+      <h1>Les tournois du VBO,<br>pilotés en direct.</h1>
+      <p>Volley-Ball Ollioulais — des poules au classement final, tout le tournoi se gère depuis le gymnase, sur votre téléphone.</p>
+    </div>
+    <p class="eyebrow" style="margin:22px 0 10px">Qui êtes-vous ?</p>
+    <div class="stack">
+      <button class="entry" onclick="go('login')">
+        <span class="ic" style="background:var(--brand-soft);color:var(--brand)">${ICON.organizer}</span>
+        <span><b>Espace organisateur</b><small>Créer et piloter un tournoi</small></span>
+        <span class="chev">›</span>
+      </button>
+      <button class="entry" onclick="go('scan')">
+        <span class="ic" style="background:var(--accent-soft);color:var(--brand)">${ICON.captain}</span>
+        <span><b>Je suis capitaine</b><small>Scanner le QR &amp; saisir mes scores</small></span>
+        <span class="chev">›</span>
+      </button>
+      <button class="entry" onclick="go('refLogin')">
+        <span class="ic" style="background:var(--brand-soft);color:var(--brand)">${ICON.referee}</span>
+        <span><b>Référent gymnase</b><small>Suivre &amp; saisir les matchs sur place</small></span>
+        <span class="chev">›</span>
+      </button>
+    </div>
+    ${installBlock('full')}
+    <p class="demo-note">Prototype cliquable — données d'exemple. Aucune donnée réelle.</p>`;
+};
+
+screens.login = ()=>{
+  setTop('Connexion organisateur'); tabbar.hidden=true;
+  host.innerHTML = `
+    <div class="card">
+      <h3 style="font-size:19px">Bon retour 👋</h3>
+      <p class="lead">Connectez-vous pour gérer vos tournois.</p>
+      <label class="field"><span>E-mail</span><input type="email" value="orga@volley-ollioules.fr" autocomplete="off"></label>
+      ${pwdField('Mot de passe','org_pass','motdepasse')}
+      <button class="btn" style="margin-top:18px" onclick="state.authed=true; go('dashboard')">Se connecter</button>
+      <button class="btn ghost" style="margin-top:10px" onclick="toast('Démo : utilisez le compte pré-rempli')">Mot de passe oublié ?</button>
+    </div>
+    ${installBlock('full')}`;
+};
+
+const TOURN_ST={
+  draft:{label:'Brouillon',badge:'warn',ic:'📝',icBg:'var(--warn-soft,#f6e6c3)',icFg:'var(--warn,#b8860b)'},
+  live:{label:'En cours',badge:'ok',ic:'📡',icBg:'var(--ok-soft)',icFg:'var(--ok)'},
+  closed:{label:'Clôturé',badge:'wait',ic:'✓',icBg:'var(--surface-2)',icFg:'var(--muted)'},
+};
+function tournPhaseInfo(t){
+  const order=phaseOrder(t.config);
+  const names={brassage:'Brassage', poules2:'Principale & Consolante', finales:'Phases finales'};
+  let p=t.livePhase||'brassage';
+  if(order.indexOf(p)<0) p=order[order.length-1]; // livePhase hors du déroulé (ex. poules2 sans consolante)
+  const i=Math.max(0,order.indexOf(p));
+  return {i, total:order.length, name:names[p]||'Brassage'};
+}
+function tournCard(t){
+  const archived=state.dashView==='archived';
+  const st=TOURN_ST[t.status]||TOURN_ST.draft;
+  const sub = t.status==='draft'
+    ? `${t.config.teams||'?'} équipes · ${fmtDate(t.config.date)} · étape ${Math.min((t.step||0)+1,CREATE_STEPS.length)}/${CREATE_STEPS.length} · ${CREATE_STEPS[Math.min(t.step||0,CREATE_STEPS.length-1)]}`
+    : `${t.config.teams||'?'} équipes · ${fmtDate(t.config.date)}`;
+  let phaseLine='';
+  if(t.status==='live'){
+    const ph=tournPhaseInfo(t);
+    const bars=Array.from({length:ph.total},(_,i)=>`<span class="ps ${i<ph.i?'done':i===ph.i?'cur':''}"></span>`).join('');
+    phaseLine=`<span class="phase-mini"><span class="bars">${bars}</span>Phase ${ph.i+1}/${ph.total} · ${ph.name}</span>`;
+  }
+  const open = t.status==='draft' ? `resumeDraft('${t.id}')` : `openTournament('${t.id}')`;
+  let actions='';
+  if(archived){
+    actions=`<button class="tbtn" onclick="event.stopPropagation();unarchiveTournament('${t.id}')">↩︎ Désarchiver</button>`;
+  }else{
+    if(t.status==='live') actions+=`<button class="tbtn" onclick="event.stopPropagation();closeTournament('${t.id}')">Clôturer</button>`;
+    actions+=`<button class="tbtn" onclick="event.stopPropagation();archiveTournament('${t.id}')">Archiver</button>`;
+  }
+  return `<div class="tour">
+    <div class="list-item" style="margin:0" onclick="${open}">
+      ${t.config.image
+        ? `<span class="ic has-img"><img src="${t.config.image}" alt=""></span>`
+        : `<span class="ic" style="background:${st.icBg};color:${st.icFg}">${st.ic}</span>`}
+      <span style="min-width:0"><b>${t.config.name}</b><small>${sub}</small>${phaseLine}</span>
+      <span class="badge ${st.badge}" style="margin-left:auto;flex:none">${st.label}</span>
+    </div>
+    <div class="tour-actions">${actions}</div>
+  </div>`;
+}
+function tournSection(title,list){
+  if(!list.length) return '';
+  return `<p class="eyebrow" style="margin:16px 0 8px">${title}</p>${list.map(tournCard).join('')}`;
+}
+screens.dashboard = ()=>{
+  setTop(null); tabbar.hidden=true;
+  const view=state.dashView||'active';
+  const active=state.tournaments.filter(t=>!t.archived);
+  const archived=state.tournaments.filter(t=>t.archived);
+  const live=active.filter(t=>t.status==='live');
+  const drafts=active.filter(t=>t.status==='draft');
+  const closed=active.filter(t=>t.status==='closed');
+  let body;
+  if(view==='archived'){
+    body = archived.length ? archived.map(tournCard).join('')
+      : `<div class="empty">🗄️<p>Aucun tournoi archivé.</p></div>`;
+  }else{
+    body = (active.length)
+      ? tournSection('En cours',live)+tournSection('Brouillons',drafts)+tournSection('Clôturés',closed)
+      : `<div class="empty">🏐<p>Aucun tournoi pour le moment.<br>Créez votre premier tournoi ci-dessous.</p></div>`;
+  }
+  host.innerHTML = `
+    <div class="screen" style="padding:0">
+      <div style="display:flex;align-items:center;gap:10px;margin-bottom:16px">
+        <div class="logo">${logoMark()} ${APP_NAME}</div>
+        <button class="btn ghost sm" style="margin-left:auto" onclick="go('home')">Quitter</button>
+      </div>
+      <p class="eyebrow">Mes tournois</p>
+      <h3 style="font-size:22px;margin:4px 0 14px">Bonjour, organisateur</h3>
+      <div class="seg" style="margin-bottom:6px">
+        <button class="${view==='active'?'on':''}" onclick="setDashView('active')">Actifs</button>
+        <button class="${view==='archived'?'on':''}" onclick="setDashView('archived')">Archivés${archived.length?` (${archived.length})`:''}</button>
+      </div>
+      ${body}
+      ${view==='active'?`<button class="btn accent" style="margin-top:20px" onclick="startWizard()">＋ Créer un tournoi</button>`:''}
+      <p class="eyebrow" style="margin:22px 0 8px">Administration</p>
+      <button class="list-item" style="width:100%;text-align:left;background:var(--surface)" onclick="go('adminReferents')">
+        <span class="ic" style="background:var(--brand-soft);color:var(--brand)">${ICON.referee}</span>
+        <span style="min-width:0"><b>Référents gymnase</b><small>${state.referents.length} compte${state.referents.length>1?'s':''} · accès sur place</small></span>
+        <span class="chev">›</span>
+      </button>
+      ${installBlock('full')}
+    </div>`;
+};
+window.setDashView=(v)=>{ state.dashView=v; screens.dashboard(); };
+window.archiveTournament=(id)=>{ const t=state.tournaments.find(x=>x.id===id); if(t){ t.archived=true; toast('Tournoi archivé'); } screens.dashboard(); };
+window.unarchiveTournament=(id)=>{ const t=state.tournaments.find(x=>x.id===id); if(t){ t.archived=false; toast('Tournoi désarchivé'); } screens.dashboard(); };
+window.closeTournament=(id)=>{ const t=state.tournaments.find(x=>x.id===id); if(t){ t.status='closed'; t.closedAt=Date.now(); toast('Tournoi clôturé'); } screens.dashboard(); };
+window.openTournament=(id)=>{
+  const t=state.tournaments.find(x=>x.id===id); if(!t) return;
+  Object.assign(state.config, t.config);
+  (t.gyms||[]).forEach((nm,i)=>{ if(GYMS[i]) GYMS[i].name=nm; });
+  if(t.teams&&t.teams.length) state.teams=t.teams.map(x=>({name:x.name,level:x.level}));
+  if(t.joinCode) state.joinCode=t.joinCode;
+  state.currentDraftId=t.id;
+  state.livePhase=t.livePhase||'brassage';
+  rebuildPools();
+  renderTabs('orgLive'); go('orgLive');
+};
+
+/* ---------- Création wizard ---------- */
+let wizStep = 0;
+const WIZ_STEPS = ['Infos','Format & gymnases','Règles de match','Phases'];
+// Parcours complet de création (barre d'avancement commune à tous les écrans)
+const CREATE_STEPS = ['Infos','Format','Règles','Phases','Inscriptions','Répartition','Lancement'];
+function createProgArr(idx){ return CREATE_STEPS.map((_,i)=> i<idx?'done': i===idx?'cur':''); }
+// Étape réelle du parcours de création (0-3 = wizard, 4 = inscriptions, 5 = répartition, 6 = lancement)
+let createStage = 0;
+function startWizard(){ wizStep=0; createStage=0; state.currentDraftId=null; go('wizard'); }
+/* ----- Brouillons : sauvegarde / reprise à chaque étape ----- */
+function snapshotTournament(){
+  return {
+    config: JSON.parse(JSON.stringify(state.config)),
+    gyms: GYMS.slice(0, state.config.gyms).map(g=>g.name),
+    teams: state.teams.map(t=>({name:t.name, level:t.level})),
+    step: createStage,
+  };
+}
+function saveDraft(exit){
+  saveWizard();
+  const snap=snapshotTournament();
+  let d=state.tournaments.find(x=>x.id===state.currentDraftId);
+  if(!d){ d={id:'d'+Date.now(), status:'draft', archived:false}; state.tournaments.push(d); state.currentDraftId=d.id; }
+  Object.assign(d, snap, {id:d.id, savedAt:Date.now()});
+  if(!d.status) d.status='draft';
+  toast('💾 Brouillon enregistré');
+  if(exit) go('dashboard');
+}
+function resumeDraft(id){
+  const d=state.tournaments.find(x=>x.id===id); if(!d) return;
+  Object.assign(state.config, d.config);
+  (d.gyms||[]).forEach((nm,i)=>{ if(GYMS[i]) GYMS[i].name=nm; });
+  state.teams = (d.teams||[]).map(t=>({name:t.name, level:t.level}));
+  state.currentDraftId=id;
+  const st=d.step||0; createStage=st;
+  if(st<=3){ wizStep=st; go('wizard'); }
+  else { wizStep=3; rebuildPools(); go(st===4?'teamsRegister':st===5?'assignPools':'summary'); }
+}
+// Lancement : enregistre le tournoi dans la liste (statut « En cours ») puis génère le QR
+function launchTournament(){
+  saveWizard();
+  if(!state.joinCode) state.joinCode=genJoinCode();
+  const snap=snapshotTournament();
+  let t=state.tournaments.find(x=>x.id===state.currentDraftId);
+  if(!t){ t={id:'t'+Date.now()}; state.tournaments.push(t); state.currentDraftId=t.id; }
+  state.livePhase='brassage';
+  Object.assign(t, snap, {id:t.id, status:'live', archived:false, joinCode:state.joinCode, launchedAt:Date.now(), livePhase:'brassage'});
+  go('qr');
+}
+window.saveDraft=saveDraft; window.resumeDraft=resumeDraft; window.launchTournament=launchTournament;
+function wizProgArr(){ return WIZ_STEPS.map((_,i)=> i<wizStep?'done': i===wizStep?'cur':''); }
+
+screens.wizard = ()=>{
+  tabbar.hidden=true;
+  createStage=wizStep;
+  setTop('Nouveau tournoi',{step:`${wizStep+1}/${CREATE_STEPS.length}`, prog:createProgArr(wizStep)});
+  const steps=[wizInfos,wizFormat,wizRules,wizPhases];
+  steps[wizStep]();
+};
+function wizNav(){
+  return `<div class="btn-row" style="margin-top:22px">
+    ${wizStep>0?`<button class="btn ghost" onclick="saveWizard();wizStep--;screens.wizard()">Précédent</button>`:''}
+    <button class="btn" onclick="wizNext()">${wizStep<3?'Continuer':'Valider le format'}</button>
+  </div>
+  <button class="btn ghost sm" style="margin-top:10px;width:100%" onclick="saveDraft(true)">💾 Enregistrer et reprendre plus tard</button>`;
+}
+function saveWizard(){
+  const g=id=>document.getElementById(id);
+  // Infos générales (étape 1)
+  if(g('w_name')&&g('w_name').value.trim()) state.config.name=g('w_name').value.trim();
+  if(g('w_date')&&g('w_date').value) state.config.date=g('w_date').value;
+  if(g('w_place')&&g('w_place').value.trim()) state.config.place=g('w_place').value.trim();
+  if(g('w_teams')) state.config.teams=+g('w_teams').value;
+  if(g('w_gyms')) state.config.gyms=+g('w_gyms').value;
+  if(g('w_pools')) state.config.pools=+g('w_pools').value;
+  if(g('w_tpp')) state.config.teamsPerPool=+g('w_tpp').value;
+  if(g('w_schedmode')){ state.config.scheduleMode=g('w_schedmode').value; const h=g('schedHint'); if(h) h.textContent = state.config.scheduleMode==='pool'?'Toute une poule joue en même temps, puis on alterne avec la poule suivante du gymnase.':'Les terrains tournent en continu, un match par terrain et par tour.'; }
+  if(g('w_starttime')&&g('w_starttime').value) state.config.startTime=g('w_starttime').value;
+  if(g('w_roundmin')) state.config.roundMinutes=+g('w_roundmin').value;
+  if(g('w_setupmin')) state.config.setupMinutes=+g('w_setupmin').value;
+  // Règles de match — phase de brassage
+  if(g('b_sets')) state.config.sets=+g('b_sets').value;
+  if(g('b_pts')) state.config.pointsPerSet=+g('b_pts').value;
+  if(g('b_min')) state.config.setMinutes=+g('b_min').value;
+  if(g('sw_b_timed')) state.config.timed=g('sw_b_timed').classList.contains('on');
+  if(g('sw_b_gap')) state.config.twoPointGap=g('sw_b_gap').classList.contains('on');
+  if(g('w_winpts')) state.config.winPts=+g('w_winpts').value;
+  if(g('w_losspts')) state.config.lossPts=+g('w_losspts').value;
+  if(g('sw_conso')) state.config.phaseConsolante=g('sw_conso').classList.contains('on');
+  if(g('w_finalStart')) state.config.finalStart=g('w_finalStart').value;
+  // Noms + nombre de terrains par gymnase
+  document.querySelectorAll('input[id^="w_gymname_"]').forEach(el=>{ const i=+el.id.replace('w_gymname_',''); if(GYMS[i]&&el.value.trim()) GYMS[i].name=el.value.trim(); });
+  const gc=[];
+  document.querySelectorAll('input[id^="w_gymcourts_"]').forEach(el=>{ gc[+el.id.replace('w_gymcourts_','')]=+el.value; });
+  state.config.courtsPerGym = Array.from({length:state.config.gyms},(_,i)=> gc[i]||state.config.courtsPerGym[i]||3);
+  state.config.courts = state.config.courtsPerGym.reduce((a,b)=>a+b,0);
+}
+function syncTeamsCount(){
+  const n=Math.max(2, state.config.teams||0);
+  if(state.teams.length>n) state.teams=state.teams.slice(0,n);
+  while(state.teams.length<n){ const i=state.teams.length; state.teams.push({name: TEAM_NAMES[i]||('Équipe '+(i+1)), level: DEMO_LEVELS[i]||'dep'}); }
+}
+function wizNext(){ saveWizard(); if(wizStep<3){wizStep++;screens.wizard();} else { go('teamsRegister'); } }
+
+function wizInfos(){
+  host.innerHTML = `
+    <h3 style="font-size:19px">Informations générales</h3>
+    <p class="lead">Les bases de votre tournoi.</p>
+    <label class="field"><span>Nom du tournoi</span><input id="w_name" value="${C.name}"></label>
+    <div class="grid2">
+      <label class="field"><span>Date</span><input id="w_date" type="date" value="${C.date}"></label>
+      <label class="field"><span>Ville</span><input id="w_place" value="${C.place}"></label>
+    </div>
+    <div class="field">
+      <span>Image du tournoi <span style="font-weight:500">(optionnel)</span></span>
+      <label for="w_image" class="img-pick">
+        ${C.image?`<img src="${C.image}" alt="">`:`<div class="img-ph"><span style="font-size:28px">🖼️</span><small>Ajouter une image</small></div>`}
+      </label>
+      <input id="w_image" type="file" accept="image/*" hidden onchange="pickTournImage(this)">
+      ${C.image?`<button class="btn ghost sm" style="margin-top:8px;width:100%" onclick="clearTournImage()">Retirer l'image</button>`:`<small class="muted" style="display:block;margin-top:6px;font-size:11.5px">Elle remplacera l'icône dans la liste de vos tournois.</small>`}
+    </div>
+    ${wizNav()}`;
+}
+window.pickTournImage=(input)=>{
+  const f=input.files&&input.files[0]; if(!f) return;
+  saveWizard();
+  const r=new FileReader();
+  r.onload=()=>{ state.config.image=r.result; wizInfos(); };
+  r.readAsDataURL(f);
+};
+window.clearTournImage=()=>{ saveWizard(); state.config.image=null; wizInfos(); };
+function numCtl(id,val,min,max){
+  return `<div class="stepper">
+    <button onclick="bump('${id}',-1,${min},${max})">−</button>
+    <input id="${id}" value="${val}" inputmode="numeric" onchange="clampField('${id}',${min},${max})">
+    <button onclick="bump('${id}',1,${min},${max})">＋</button></div>`;
+}
+window.bump=(id,d,min,max)=>{const el=document.getElementById(id);let v=(parseInt(el.value)||0)+d;v=Math.max(min,Math.min(max,v));el.value=v;el.dispatchEvent(new Event('live'));};
+window.clampField=(id,min,max)=>{const el=document.getElementById(id);let v=parseInt(el.value)||min;el.value=Math.max(min,Math.min(max,v));};
+
+function wizFormat(){
+  host.innerHTML = `
+    <h3 style="font-size:19px">Format &amp; gymnases</h3>
+    <p class="lead">Gymnases, terrains et déroulé des matchs.</p>
+    <label class="field"><span>Nombre de gymnases</span>${numCtl('w_gyms',C.gyms,1,4)}</label>
+    <div id="gymNames"></div>
+    <label class="field"><span>Déroulé des matchs</span>
+      <select id="w_schedmode" onchange="saveWizard()">
+        <option value="rotation"${C.scheduleMode!=='pool'?' selected':''}>Rotation des terrains (classique)</option>
+        <option value="pool"${C.scheduleMode==='pool'?' selected':''}>Une poule entière à la fois</option>
+      </select>
+    </label>
+    <div id="schedHint" class="muted" style="font-size:12px;margin:8px 2px 0;line-height:1.45">${C.scheduleMode==='pool'?'Toute une poule joue en même temps, puis on alterne avec la poule suivante du gymnase.':'Les terrains tournent en continu, un match par terrain et par tour.'}</div>
+    <div class="card" style="margin-top:14px;background:var(--surface-2);border:none">
+      <div id="formatCheck" style="font-size:13px"></div>
+    </div>
+    ${wizNav()}`;
+  ['w_gyms'].forEach(id=>{
+    const el=document.getElementById(id);
+    el.addEventListener('live',updateFormatCheck); el.addEventListener('change',updateFormatCheck);
+  });
+  renderGymNames(); updateFormatCheck();
+}
+window.updateSchedPreview=function(){
+  const box=document.getElementById('schedPreview'); if(!box) return;
+  const per=((+state.config.roundMinutes)||20)+((+state.config.setupMinutes)||10);
+  box.innerHTML=`Un tour toutes les ${per} min · Tour 1 à ${slotTime(1)}, tour 2 à ${slotTime(2)}, tour 3 à ${slotTime(3)}…`;
+};
+function renderGymNames(){
+  const n=parseInt(document.getElementById('w_gyms').value)||1;
+  const box=document.getElementById('gymNames');
+  // préserver les valeurs déjà saisies avant de reconstruire
+  const prevN=[], prevC=[];
+  box.querySelectorAll('input[id^="w_gymname_"]').forEach(el=>{prevN[+el.id.replace('w_gymname_','')]=el.value;});
+  box.querySelectorAll('input[id^="w_gymcourts_"]').forEach(el=>{prevC[+el.id.replace('w_gymcourts_','')]=el.value;});
+  let h='';
+  for(let i=0;i<n;i++){
+    const nm = prevN[i]!=null?prevN[i] : (GYMS[i]?GYMS[i].name:'Gymnase '+(i+1));
+    const ct = prevC[i]!=null?prevC[i] : (state.config.courtsPerGym[i]!=null?state.config.courtsPerGym[i]:3);
+    h+=`<div class="card" style="padding:10px 12px;margin-top:8px;background:var(--surface-2);border:none">
+      <label class="field" style="margin:0"><span>Gymnase ${i+1}</span><input id="w_gymname_${i}" value="${nm}"></label>
+      <label class="field" style="margin:8px 0 0"><span>Nombre de terrains</span>${numCtl('w_gymcourts_'+i,ct,1,8)}</label>
+    </div>`;
+  }
+  box.innerHTML=h;
+  for(let i=0;i<n;i++){ const el=document.getElementById('w_gymcourts_'+i); if(el){ el.addEventListener('live',updateFormatCheck); el.addEventListener('change',updateFormatCheck); } }
+}
+function updateFormatCheck(){
+  const gyms=+document.getElementById('w_gyms').value;
+  renderGymNames();
+  let totalCourts=0; document.querySelectorAll('input[id^="w_gymcourts_"]').forEach(el=>totalCourts+=(+el.value||0));
+  const box=document.getElementById('formatCheck');
+  box.innerHTML = `
+    <div style="display:flex;justify-content:space-between"><span class="muted">${gyms} gymnase${gyms>1?'s':''}</span><b>${totalCourts} terrain${totalCourts>1?'s':''}</b></div>
+    <div style="margin-top:8px"><span class="badge brand">Les équipes et le découpage en poules se définissent après, à l'inscription</span></div>`;
+}
+
+function rulesCard(p, r){
+  return `<div class="card" style="margin-top:8px">
+      <label class="field" style="margin:0"><span>Nombre de sets</span>${numCtl(p+'sets', r.sets, 1, 5)}</label>
+      <div class="toggle" style="margin-top:4px">
+        <div><b>Set au temps</b><small>Le set s'arrête à la fin du chrono</small></div>
+        <button class="sw ${r.timed?'on':''}" id="sw_${p}timed" onclick="toggleSw('sw_${p}timed');toggleTimed('${p}')"></button>
+      </div>
+      <div id="${p}ptsRow" ${r.timed?'hidden':''}>
+        <label class="field" style="margin-top:4px"><span>Points par set</span>${numCtl(p+'pts', r.pointsPerSet, 10, 50)}</label>
+      </div>
+      <div id="${p}timeRow" ${r.timed?'':'hidden'}>
+        <label class="field" style="margin-top:4px"><span>Durée du set (minutes)</span>${numCtl(p+'min', r.setMinutes, 5, 40)}</label>
+      </div>
+      <div class="toggle">
+        <div><b>2 points d'écart</b><small>Il faut 2 points d'avance pour gagner le set</small></div>
+        <button class="sw ${r.twoPointGap?'on':''}" id="sw_${p}gap" onclick="toggleSw('sw_${p}gap')"></button>
+      </div>
+    </div>`;
+}
+function wizRules(){
+  host.innerHTML = `
+    <h3 style="font-size:19px">Règles de la phase de brassage</h3>
+    <p class="lead">Ces règles s'appliquent au brassage. Celles des phases suivantes seront à définir au moment de les lancer.</p>
+    <p class="eyebrow" style="margin:14px 0 2px">🔄 Phase de brassage</p>
+    ${rulesCard('b_', {sets:C.sets, pointsPerSet:C.pointsPerSet, twoPointGap:C.twoPointGap, timed:C.timed, setMinutes:C.setMinutes})}
+    <div class="card" style="margin-top:16px;background:var(--brand-soft);border:1.5px solid var(--brand)">
+      <div style="display:flex;align-items:center;gap:8px;font-weight:800;font-size:15px;color:var(--brand)"><span style="font-size:18px">🕐</span> Horaire des matchs</div>
+      <p style="font-size:12px;color:var(--muted);margin:7px 2px 12px;line-height:1.5">Les horaires du planning sont calculés à partir de ces paramètres. <b style="color:var(--fg)">Un tour</b> = durée d'un match + mise en place.</p>
+      <label class="field" style="margin:0"><span>Heure de début</span>
+        <input id="w_starttime" type="time" value="${C.startTime||'09:00'}" onchange="saveWizard();updateSchedPreview()">
+      </label>
+      <label class="field" style="margin:10px 0 0"><span>Durée d'un match (min)</span>${numCtl('w_roundmin',C.roundMinutes||20,5,120)}</label>
+      <label class="field" style="margin:10px 0 0"><span>Mise en place entre les tours (min)</span>${numCtl('w_setupmin',C.setupMinutes!=null?C.setupMinutes:10,0,60)}</label>
+      <div id="schedPreview" style="font-size:12px;margin:12px 2px 0;line-height:1.45;font-weight:700;color:var(--brand)"></div>
+    </div>
+    <p class="eyebrow" style="margin:18px 0 6px">Barème du classement</p>
+    <div class="card">
+      <div class="grid2">
+        <label class="field" style="margin:0"><span>Points par victoire</span>${numCtl('w_winpts',C.winPts,0,10)}</label>
+        <label class="field" style="margin:0"><span>Points par défaite</span>${numCtl('w_losspts',C.lossPts,0,10)}</label>
+      </div>
+    </div>
+    ${wizNav()}`;
+  ['w_roundmin','w_setupmin'].forEach(id=>{
+    const el=document.getElementById(id); if(!el) return;
+    el.addEventListener('live',()=>{saveWizard();updateSchedPreview();});
+    el.addEventListener('change',()=>{saveWizard();updateSchedPreview();});
+  });
+  updateSchedPreview();
+}
+window.toggleSw=(id)=>{document.getElementById(id).classList.toggle('on');};
+window.toggleTimed=(p)=>{p=p||''; const on=document.getElementById('sw_'+p+'timed').classList.contains('on');
+  document.getElementById(p+'timeRow').hidden=!on; document.getElementById(p+'ptsRow').hidden=on;};
+
+// Nombre de qualifiés en Principale = 1ers + 2es de chaque poule (partage par rang)
+function principalQualCount(){
+  const n=(state.pools||[]).reduce((s,p)=> s+Math.min(2,(p.teams||[]).length), 0);
+  return n || Math.floor((C.teams||0)/2);
+}
+function autoFinalLabel(){
+  const qual=principalQualCount();
+  let K=1; while(K*2<=qual) K*=2; K=Math.max(2,K); // plus grande puissance de 2 ≤ qualifiés
+  return {K, qual, label: K===2?'Finale directe':'1/'+(K/2)+' de finale ('+K+' équipes)'};
+}
+function wizPhases(){
+  host.innerHTML = `
+    <h3 style="font-size:19px">Déroulé du tournoi</h3>
+    <p class="lead">Les phases s'enchaînent automatiquement.</p>
+    <div class="toggle" style="margin-top:12px">
+      <div><b>Phase Principale &amp; Consolante</b><small>Deuxième tour de poules entre le brassage et les finales.</small></div>
+      <button class="sw ${C.phaseConsolante?'on':''}" id="sw_conso" onclick="toggleSw('sw_conso');updateConsoHint()"></button>
+    </div>
+    <div id="consoHint" style="font-size:12px;color:var(--muted);margin:8px 2px 0;line-height:1.5"></div>
+    <div id="wizPhaseList" style="margin-top:14px"></div>
+    ${wizNav()}`;
+  updateConsoHint();
+}
+function renderWizPhaseList(){
+  const box=document.getElementById('wizPhaseList'); if(!box) return;
+  const sw=document.getElementById('sw_conso');
+  const on=sw?sw.classList.contains('on'):!!C.phaseConsolante;
+  const order = on ? ['brassage','poules2','finales'] : ['brassage','finales'];
+  const defs={
+    brassage:['Phase de brassage','Chaque équipe joue tous les adversaires de sa poule. Un classement se dégage par poule.'],
+    poules2:['Principale &amp; Consolante','Les 1ers–2es vont en Principale, les 3es–4es en Consolante. Chaque catégorie rejoue en poules.'],
+    finales:['Phases finales', on?'Élimination directe pour chaque catégorie. Le tour de départ (1/8, 1/4, 1/2…) sera choisi au lancement.':'Les 1ers–2es de chaque poule de brassage basculent directement en tableau à élimination.'],
+  };
+  box.innerHTML = `<div class="card">${order.map((p,i)=>`<div class="phase"><div class="num">${i+1}</div><div><b>${defs[p][0]}</b><small>${defs[p][1]}</small></div></div>`).join('')}</div>`;
+}
+window.updateConsoHint=()=>{
+  const el=document.getElementById('consoHint');
+  const sw=document.getElementById('sw_conso');
+  if(el&&sw){
+    const on=sw.classList.contains('on');
+    el.innerHTML = on
+      ? "✅ <b>Activée</b> — tournoi en 3 phases. Deux tableaux en phase 2 : 1ers–2es en Principale, 3es–4es en Consolante. Chaque catégorie a sa propre phase finale."
+      : "⛔ <b>Désactivée</b> — tournoi en 2 phases : brassage puis phases finales. Seuls les 1ers–2es de chaque poule continuent, directement en tableau à élimination ; les 3es–4es sont éliminés après le brassage.";
+  }
+  renderWizPhaseList();
+};
+window.updateFinalHint=()=>{
+  const el=document.getElementById('finalHint'); if(!el) return;
+  const sel=document.getElementById('w_finalStart'); const v=sel?sel.value:'auto';
+  const af=autoFinalLabel(), n=af.qual;
+  const K = v==='auto' ? af.K : Math.min(+v||af.K, af.K);
+  const tour = K===2?'Finale directe':'1/'+(K/2)+' de finale';
+  const drop = n>K ? ` Les <b>${n-K}</b> équipes les moins bien classées ne disputent pas de tableau (elles restent au classement de la Principale).` : '';
+  const autoTxt = v==='auto' ? ' (automatique)' : '';
+  el.innerHTML = `🎯 <b>${n}</b> qualifiés en Principale → tableau <b>${tour}</b>${autoTxt}, les <b>${K}</b> mieux classés.${drop}`;
+};
+
+/* ---------- Inscription des équipes (niveau) ---------- */
+screens.teamsRegister = ()=>{
+  tabbar.hidden=true;
+  createStage=4;
+  setTop('Inscription des équipes',{step:`5/${CREATE_STEPS.length}`, prog:createProgArr(4)});
+  const counts=LEVELS.map(l=>({...l,n:state.teams.filter(t=>t.level===l.id).length}));
+  let h=`<div style="padding:0">
+    <p class="lead" style="margin-top:0">Le niveau est renseigné par chaque équipe à l'inscription et sert à établir les têtes de série.</p>
+    <div class="card" style="background:var(--surface-2);border:none;margin-bottom:12px">
+      <div style="font-size:12.5px;font-weight:700;margin-bottom:8px">Pré-remplir la liste</div>
+      <div style="display:flex;gap:10px;align-items:center">
+        <div style="flex:none">${numCtl('reg_count',state.teams.length,2,64)}</div>
+        <button class="btn ghost sm" style="flex:1;margin:0" onclick="prefillTeams()">Générer les lignes</button>
+      </div>
+      <div style="font-size:11.5px;color:var(--muted);margin-top:8px;line-height:1.5">Crée d'un coup le bon nombre de lignes. Les noms déjà saisis sont conservés ; vous pouvez ensuite ajouter ou retirer des équipes à l'unité.</div>
+    </div>
+    <div class="card" style="background:var(--surface-2);border:none">
+      <div style="display:flex;flex-wrap:wrap;gap:8px">${counts.map(c=>`<span class="chip" style="color:${c.color}"><span style="width:8px;height:8px;border-radius:50%;background:${c.color};display:inline-block"></span>${c.label} · ${c.n}</span>`).join('')}</div>
+      <div style="font-size:11.5px;color:var(--muted);margin-top:10px">ℹ️ Têtes de série : Nationale &gt; Régionale &gt; Départ./Loisirs &gt; Jeunes. Les équipes de même niveau sont réparties dans des poules différentes.</div>
+    </div>
+    <div style="margin-top:14px">`;
+  state.teams.forEach((t,i)=>{
+    const lm=levelMeta(t.level);
+    h+=`<div class="list-item" style="padding:11px 13px">
+      <span class="ic" style="width:34px;height:34px;font-size:13px;font-weight:800;background:${lm.color}22;color:${lm.color}">${i+1}</span>
+      <input value="${(t.name||'').replace(/"/g,'&quot;')}" onchange="setTeamName(${i},this.value)" placeholder="Nom de l'équipe" style="flex:1;min-width:0;border:1.5px solid var(--line);border-radius:10px;padding:8px 10px;background:var(--surface);color:var(--fg);font-weight:700;font-size:14px;font-family:inherit">
+      <select onchange="setLevel(${i},this.value)" style="border:1.5px solid var(--line);border-radius:10px;padding:8px 9px;background:var(--surface);color:var(--fg);font-weight:600;font-size:13px">
+        ${LEVELS.map(l=>`<option value="${l.id}" ${l.id===t.level?'selected':''}>${l.label}</option>`).join('')}
+      </select>
+      <button onclick="removeTeam(${i})" title="Supprimer l'équipe" style="border:none;background:var(--danger-soft);color:var(--danger);width:32px;height:32px;border-radius:9px;font-size:15px;font-weight:800;cursor:pointer;flex:none">✕</button>
+    </div>`;
+  });
+  h+=`</div>
+    <button class="btn ghost" style="margin-top:14px" onclick="addTeam()">＋ Ajouter une équipe</button>
+    <button class="btn" style="margin-top:10px" onclick="rebuildPools();go('assignPools')">Continuer → Répartition</button>
+    <button class="btn ghost sm" style="margin-top:10px;width:100%" onclick="saveDraft(true)">💾 Enregistrer et quitter</button>
+  </div>`;
+  host.innerHTML=h;
+};
+window.prefillTeams=()=>{
+  const n=Math.max(2,Math.min(64, parseInt((document.getElementById('reg_count')||{}).value)||2));
+  state.config.teams=n; syncTeamsCount();
+  screens.teamsRegister(); toast('Liste pré-remplie à '+n+' équipes');
+};
+window.setLevel=(i,v)=>{ state.teams[i].level=v; };
+window.setTeamName=(i,v)=>{ if(state.teams[i]) state.teams[i].name=v.trim()||('Équipe '+(i+1)); };
+window.removeTeam=(i)=>{
+  if(state.teams.length<=2){ toast('Il faut au moins 2 équipes'); return; }
+  const nm=state.teams[i].name; state.teams.splice(i,1);
+  state.config.teams=state.teams.length;
+  toast('Équipe « '+nm+' » retirée');
+  screens.teamsRegister();
+};
+window.addTeam=()=>{
+  state.teams.push({name:'Nouvelle équipe '+(state.teams.length+1), level:'dep'});
+  state.config.teams=state.teams.length;
+  screens.teamsRegister();
+};
+
+/* ---------- Assign teams to pools ---------- */
+screens.assignPools = ()=>{
+  tabbar.hidden=true;
+  createStage=5;
+  setTop('Répartition des équipes',{step:`6/${CREATE_STEPS.length}`, prog:createProgArr(5)});
+  const G=state.config.gyms;
+  const methods=[['snake','Serpentin'],['random','Aléatoire'],['manual','Manuel']];
+  let h=`<div class="screen" style="padding:0">
+    <p class="lead" style="margin-top:0">Vous avez <b>${state.teams.length} équipes</b> inscrites. Choisissez le découpage en poules, puis répartissez-les.</p>
+    <p class="eyebrow" style="margin:16px 0 6px">Découpage en poules</p>
+    <div class="card" style="background:var(--brand-soft);border:1.5px solid var(--brand);margin-bottom:12px">
+      <div style="display:flex;align-items:center;gap:8px;font-weight:800;font-size:14px;color:var(--brand)">✨ Trouver le meilleur découpage</div>
+      <div style="font-size:12px;color:var(--muted);line-height:1.5;margin:6px 0 11px">Calcule d'un coup le nombre de poules et d'équipes par poule qui tombe juste sur vos <b>${state.teams.length} équipes</b>.</div>
+      <button class="btn" style="width:100%;margin:0" onclick="autoFitPools()">✨ Trouver le meilleur découpage</button>
+    </div>
+    <p style="text-align:center;font-size:11.5px;color:var(--muted);margin:0 0 8px;text-transform:uppercase;letter-spacing:.06em;font-weight:700">ou ajustez à la main</p>
+    <div class="grid2">
+      <label class="field" style="margin:0"><span>Nombre de poules</span>${numCtl('ap_pools',C.pools,1,16)}</label>
+      ${C.pools===1
+        ? `<label class="field" style="margin:0"><span>Équipes / poule</span><div class="stepper" style="opacity:.55;pointer-events:none"><button disabled>−</button><input value="${state.teams.length}" disabled style="text-align:center"><button disabled>＋</button></div></label>`
+        : `<label class="field" style="margin:0"><span>Équipes / poule</span>${numCtl('ap_tpp',C.teamsPerPool,2,8)}</label>`}
+    </div>
+    <div class="card" style="background:var(--surface-2);border:none;margin-top:10px">
+      <div id="poolFit" style="font-size:12.5px;line-height:1.5"></div>
+    </div>
+    <p class="eyebrow" style="margin:16px 0 6px">Méthode de répartition</p>
+    <div class="seg" id="distSeg">${methods.map(m=>`<button class="${state.config.distribution===m[0]?'on':''}" onclick="setDist('${m[0]}')">${m[1]}</button>`).join('')}</div>
+    <div class="card" style="background:var(--surface-2);border:none;font-size:12.5px;line-height:1.55" id="distHelp"></div>
+    ${state.config.distribution!=='manual'?`<button class="btn ghost sm" style="margin:12px 0 4px" onclick="rebuildPools();screens.assignPools();toast('Nouvelle répartition générée')">🔄 Régénérer</button>`:''}`;
+  GYMS.slice(0,G).forEach(g=>{
+    const gp = state.pools.filter(p=>p.gym===g.id);
+    if(!gp.length) return;
+    const nbTeams = gp.reduce((s,p)=>s+p.teams.length,0);
+    h+=`<div class="gymblock" style="--gc:${g.color}">
+      <div class="gymhead"><span class="badge-gym">🏟️ ${g.name}</span>
+      <span class="count">${gp.length} poule${gp.length>1?'s':''} · ${nbTeams} équipes</span></div>`;
+    gp.forEach(p=>{
+      const courts=state.courtsByGym[p.gym]||[p.court];
+      const opts=courts.map(c=>`<option value="${c}"${c===p.court?' selected':''}>Terrain ${c}</option>`).join('');
+      h+=`<div class="pool"><div class="ph">Poule ${p.letter}<select class="tn" style="margin-left:auto;background:var(--surface);border:1px solid var(--line);border-radius:8px;padding:4px 6px;font-weight:700;color:var(--fg);font-family:inherit" onchange="setPoolCourt('${p.letter}',this.value)">${opts}</select></div><ul>`;
+      const manual=state.config.distribution==='manual';
+      const allLetters=state.pools.map(pp=>pp.letter);
+      p.teams.forEach((x)=>{ const lm=levelMeta(x.level); const esc=x.t.replace(/'/g,"\\'");
+        const mv = manual?`<select onchange="moveTeam('${p.letter}','${esc}',this.value)" style="margin-left:auto;background:var(--surface);border:1px solid var(--line);border-radius:7px;padding:2px 4px;font-size:11px;font-weight:700;color:var(--fg);font-family:inherit">${allLetters.map(l=>`<option value="${l}"${l===p.letter?' selected':''}>Poule ${l}</option>`).join('')}</select>`
+          : `<span style="margin-left:auto;font-size:10.5px;font-weight:700;color:${lm.color}">${lm.short}</span>`;
+        h+=`<li><span style="width:9px;height:9px;border-radius:50%;background:${lm.color};flex:none"></span>${x.t}${mv}</li>`; });
+      h+=`</ul></div>`;
+    });
+    h+=`</div>`; // fin .gymblock
+  });
+  h+=`<button class="btn" style="margin-top:20px" onclick="validateAssign()">Valider la répartition</button>
+    <button class="btn ghost sm" style="margin-top:10px;width:100%" onclick="saveDraft(true)">💾 Enregistrer et quitter</button></div>`;
+  host.innerHTML=h;
+  ['ap_pools','ap_tpp'].forEach(id=>{ const el=document.getElementById(id); if(el){ el.addEventListener('live',setPoolFormat); el.addEventListener('change',setPoolFormat); } });
+  updateDistHelp(); updatePoolFit();
+};
+window.setDist=(m)=>{ state.config.distribution=m; rebuildPools(); screens.assignPools(); };
+// Étape 6 : on ne valide que si la répartition est correcte
+window.validateAssign=()=>{
+  const n=state.teams.length, p=state.config.pools, t=state.config.teamsPerPool, cap=p*t;
+  const placed=state.pools.reduce((s,pl)=>s+pl.teams.length,0);
+  // On ne bloque QUE s'il y a moins de places que d'équipes (des équipes resteraient non placées).
+  // Des places vides (cap > n) sont autorisées.
+  if(p>1 && cap<n){ toast(`⚠ ${n-cap} équipe(s) non placée(s) — augmentez le format`); return; }
+  if(placed!==n){ toast(`⚠ ${n-placed} équipe(s) ne sont pas placées`); return; }
+  if(state.pools.some(pl=>pl.teams.length<2)){ toast('⚠ Chaque poule doit avoir au moins 2 équipes'); return; }
+  go('summary');
+};
+window.setPoolFormat=()=>{
+  const pEl=document.getElementById('ap_pools'), tEl=document.getElementById('ap_tpp');
+  const p=Math.max(1,Math.min(16,parseInt(pEl&&pEl.value)||1));
+  let t;
+  if(p===1){ t=Math.max(2,state.teams.length); }                       // poule unique = championnat, toutes les équipes
+  else if(tEl){ t=Math.max(2,Math.min(8,parseInt(tEl.value)||2)); }
+  else { t=Math.max(2,Math.min(8,Math.ceil(state.teams.length/p))); }   // retour depuis la poule unique : format cohérent
+  state.config.pools=p;
+  state.config.teamsPerPool=t;
+  rebuildPools(); screens.assignPools();
+};
+window.autoFitPools=()=>{
+  const n=state.teams.length;
+  const good=[4,3,5,6,2].find(t=>n%t===0 && n/t>=2 && n/t<=16);
+  let tpp, pools;
+  if(good){ tpp=good; pools=n/tpp; }
+  else { tpp=4; pools=Math.max(2,Math.min(16,Math.ceil(n/4))); }
+  state.config.teamsPerPool=tpp; state.config.pools=pools;
+  rebuildPools(); screens.assignPools();
+  toast('Format ajusté : '+pools+' poules × '+tpp+' équipes');
+};
+function updatePoolFit(){
+  const el=document.getElementById('poolFit'); if(!el) return;
+  const n=state.teams.length, p=state.config.pools, t=state.config.teamsPerPool, cap=p*t;
+  let msg;
+  if(p===1) msg=`<span class="badge ok">🏆 Poule unique — championnat : les ${n} équipes se rencontrent toutes</span>`;
+  else if(cap===n) msg=`<span class="badge ok">✓ Les ${n} équipes rentrent parfaitement (${p} × ${t})</span>`;
+  else if(cap>n) msg=`<span class="badge warn">⚠ ${cap} places pour ${n} équipes — ${cap-n} place(s) vide(s), poules inégales</span>`;
+  else msg=`<span class="badge warn">⚠ ${cap} places pour ${n} équipes — ${n-cap} équipe(s) ne seront pas placées, augmentez le format</span>`;
+  el.innerHTML=msg;
+}
+window.setPoolCourt=(letter,v)=>{ const p=state.pools.find(x=>x.letter===letter); if(p) p.court=+v; };
+window.moveTeam=(from,name,to)=>{
+  if(from===to) return;
+  const pf=state.pools.find(p=>p.letter===from), pt=state.pools.find(p=>p.letter===to);
+  if(!pf||!pt) return;
+  const idx=pf.teams.findIndex(x=>x.t===name); if(idx<0) return;
+  const [tm]=pf.teams.splice(idx,1); pt.teams.push(tm);
+  state.phasePrincipal=null; state.phaseConsolante=null; buildSchedule();
+  screens.assignPools(); toast(name+' → Poule '+to);
+};
+function updateDistHelp(){
+  const el=document.getElementById('distHelp'); if(!el) return;
+  const txt={
+    snake:"<b>Serpentin par niveau (recommandé).</b> Les équipes sont classées par niveau (tête de série), puis distribuées en serpentin — chaque poule reçoit un fort, un moyen, un plus faible. Les favoris se retrouvent dans des poules différentes et ne se croisent qu'en phase finale.",
+    random:"<b>Aléatoire équilibré.</b> Tirage au sort, mais chaque poule garde le même nombre d'équipes. Simple, sans tenir compte du niveau.",
+    manual:"<b>Manuel.</b> Vous placez chaque équipe vous-même : utilisez le menu « Poule » à droite de chaque équipe pour la déplacer. Utile si vous connaissez les niveaux ou voulez éviter certaines rencontres."
+  };
+  el.innerHTML=txt[state.config.distribution];
+}
+
+/* ---------- Summary + launch ---------- */
+screens.summary = ()=>{
+  tabbar.hidden=true;
+  createStage=6;
+  setTop(C.name,{step:`7/${CREATE_STEPS.length}`, prog:createProgArr(6)});
+  host.innerHTML=`<div class="screen" style="padding:0">
+    <span class="badge brand">Prêt à lancer</span>
+    <h3 style="font-size:21px;margin:10px 0 2px">${C.name}</h3>
+    <p class="muted" style="margin:0 0 14px">${C.place} · ${fmtDate(C.date,true)}</p>
+    <div class="card">
+      <div class="summary-row"><span class="muted">Équipes</span><b>${C.teams}</b></div>
+      <div class="summary-row"><span class="muted">Gymnases</span><b>${C.gyms}</b></div>
+      <div class="summary-row"><span class="muted">Poules</span><b>${C.pools} × ${C.teamsPerPool} équipes</b></div>
+      <div class="summary-row"><span class="muted">Terrains</span><b>${C.courts}</b></div>
+      <div class="summary-row"><span class="muted">Répartition</span><b>${C.distribution==='snake'?'Serpentin par niveau':C.distribution==='random'?'Aléatoire':'Manuelle'}</b></div>
+      <div class="summary-row"><span class="muted">Format set</span><b>1 set à 25 pts · 2 d'écart</b></div>
+      <div class="summary-row"><span class="muted">Phases</span><b>${C.phaseConsolante?'Brassage → Principale + Consolante → Finales':'Brassage → Phases finales'}</b></div>
+    </div>
+    <button class="btn accent" style="margin-top:18px" onclick="launchTournament()">🚀 Lancer le tournoi &amp; générer le QR</button>
+    <button class="btn ghost" style="margin-top:10px" onclick="go('assignPools')">Modifier la répartition</button>
+    <button class="btn ghost sm" style="margin-top:10px;width:100%" onclick="saveDraft(true)">💾 Enregistrer et quitter</button>
+    </div>`;
+};
+
+screens.qr = ()=>{
+  tabbar.hidden=true;
+  setTop('Tournoi lancé',{step:'✓', prog:createProgArr(7)});
+  if(!state.joinCode) state.joinCode=genJoinCode();   // code + QR générés automatiquement au lancement
+  const code=state.joinCode;
+  const joinUrl='https://tournoi-vbo.app/join/'+code;
+  host.innerHTML=`<div class="screen" style="padding:0;text-align:center">
+    <span class="badge ok">● En direct</span>
+    <h3 style="font-size:20px;margin:10px 0 2px">Scannez pour rejoindre</h3>
+    <p class="lead" style="margin-top:2px">Code et QR générés automatiquement. Chaque capitaine scanne le QR ou saisit le code.</p>
+    <div class="qrwrap">
+      <div class="qrcard"><div id="qrcode"></div></div>
+      <div class="joincode">${code}</div>
+    </div>
+    <div class="grid2" style="margin-top:4px">
+      <button class="btn ghost" style="margin:0" onclick="copyJoinCode('${code}')">📋 Copier le code</button>
+      <button class="btn" style="margin:0" onclick="shareJoin('${code}','${joinUrl}')">↗ Partager</button>
+    </div>
+    <button class="btn ghost" style="margin-top:10px" onclick="renderTabs('home');go('orgLive')">Accéder au tableau de bord live</button>
+    </div>`;
+  const box=document.getElementById('qrcode');
+  box.innerHTML='';
+  try{ new QRCode(box,{text:joinUrl,width:188,height:188,colorDark:'#141a2e',colorLight:'#ffffff',correctLevel:QRCode.CorrectLevel.H}); }
+  catch(e){ box.innerHTML='<div style="width:188px;height:188px;background:var(--surface-2);border-radius:8px;display:grid;place-items:center">QR</div>'; }
+};
+// Copie dans le presse-papier (avec repli pour les navigateurs/contextes sans API)
+async function copyText(txt){
+  try{ if(navigator.clipboard&&navigator.clipboard.writeText){ await navigator.clipboard.writeText(txt); return true; } }catch(e){}
+  try{ const ta=document.createElement('textarea'); ta.value=txt; ta.style.position='fixed'; ta.style.opacity='0'; document.body.appendChild(ta); ta.select(); const ok=document.execCommand('copy'); document.body.removeChild(ta); return ok; }catch(e){ return false; }
+}
+window.copyJoinCode=async(code)=>{ const ok=await copyText(code); toast(ok?'✓ Code '+code+' copié':'Code : '+code); };
+window.shareJoin=async(code,url)=>{
+  const data={ title:C.name||'Tournoi', text:`Rejoignez le tournoi « ${C.name} » sur Tournoi VBO. Code : ${code}`, url };
+  if(navigator.share){
+    try{ await navigator.share(data); return; }
+    catch(e){ if(e&&e.name==='AbortError') return; } // l'utilisateur a annulé le partage
+  }
+  const ok=await copyText(`${data.text}\n${url}`); // repli : copie du message + lien
+  toast(ok?'✓ Invitation copiée — collez-la aux capitaines':'Lien : '+url);
+};
+
+/* ---------- Organiser live (tabbed) ---------- */
+function renderTabs(active){
+  tabbar.hidden=false;
+  const tabs=[
+    {id:'orgLive',ic:'📊',label:'Accueil'},
+    {id:'schedule',ic:'📅',label:'Planning'},
+    {id:'standings',ic:'📋',label:'Poules'},
+    {id:'validate',ic:'✅',label:'Valider'},
+    {id:'bracket',ic:'🏆',label:'Finale'},
+  ];
+  tabbar.innerHTML=tabs.map(t=>`<button class="${t.id===active?'on':''}" onclick="go('${t.id}')">
+    <span class="ti">${t.ic}</span>${t.label}${t.id==='validate'&&conflicts.length?`<span style="position:absolute;margin:-6px 0 0 16px;width:8px;height:8px;border-radius:50%;background:var(--danger)"></span>`:''}</button>`).join('');
+}
+
+screens.orgLive = ()=>{
+  setTop(null); renderTabs('orgLive');
+  host.innerHTML=`<div style="padding:0">
+    <div style="display:flex;align-items:center;gap:8px;margin-bottom:14px">
+      <span class="badge ok">● En direct</span><b style="font-family:var(--font-display);min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${C.name}</b>
+      <button class="btn ghost sm" style="margin-left:auto;flex:none" onclick="go('dashboard')">← Mes tournois</button>
+    </div>
+    <div class="card" style="margin-bottom:12px;display:flex;align-items:center;gap:12px;cursor:pointer;background:var(--brand-soft);border:none" onclick="go('qr')">
+      <span style="width:42px;height:42px;border-radius:12px;background:var(--surface);display:grid;place-items:center;font-size:20px;flex:none">📱</span>
+      <div style="flex:1;min-width:0">
+        <b style="font-size:13.5px">Code &amp; QR pour les capitaines</b>
+        <div style="font-size:12px;color:var(--muted);margin-top:1px">Code <b style="color:var(--brand);letter-spacing:.04em">${state.joinCode||'—'}</b> · afficher le QR à partager</div>
+      </div>
+      <span style="color:var(--brand);font-size:20px;flex:none">›</span>
+    </div>
+    <div class="card" style="margin-bottom:12px;display:flex;align-items:center;gap:12px;cursor:pointer" onclick="go('adminReferents')">
+      <span style="width:42px;height:42px;border-radius:12px;background:var(--brand-soft);color:var(--brand);display:grid;place-items:center;flex:none">${ICON.referee}</span>
+      <div style="flex:1;min-width:0">
+        <b style="font-size:13.5px">Référents gymnase</b>
+        <div style="font-size:12px;color:var(--muted);margin-top:1px">${state.referents.length} compte${state.referents.length>1?'s':''} · créer un accès sur place</div>
+      </div>
+      <span style="color:var(--brand);font-size:20px;flex:none">›</span>
+    </div>
+    ${liveRules().timed?timerCard():''}
+    ${(()=>{
+      const sch=state.schedule||[];
+      const played=sch.filter(m=>m.status==='done').length;
+      const total=sch.length;
+      const left=total-played;
+      const pct=total?Math.round(played/total*100):0;
+      const live=sch.filter(m=>m.status==='live');
+      return `<div class="grid2">
+      <div class="card" style="text-align:center"><div style="font-family:var(--font-display);font-size:30px;font-weight:800">${played}</div><small class="muted">matchs joués</small></div>
+      <div class="card" style="text-align:center"><div style="font-family:var(--font-display);font-size:30px;font-weight:800">${left}</div><small class="muted">restants</small></div>
+    </div>
+    <div class="card" style="margin-top:12px">
+      <div class="summary-row" style="border:none"><span class="muted">Phase en cours</span><span class="badge brand">${phaseName(state.livePhase)}</span></div>
+      <div style="height:8px;border-radius:5px;background:var(--surface-2);overflow:hidden;margin-top:4px"><div style="width:${pct}%;height:100%;background:var(--brand)"></div></div>
+      <small class="muted" style="display:block;margin-top:6px">${pct} % des matchs saisis</small>
+    </div>
+    ${conflicts.length?`<div class="card" style="margin-top:12px;background:var(--danger-soft);border:none">
+      <div style="display:flex;align-items:center;gap:8px"><span>⚠️</span><b style="font-size:14px;color:var(--danger)">${conflicts.length} score en conflit à valider</b>
+      <button class="btn sm" style="margin-left:auto;background:var(--danger)" onclick="go('validate')">Voir</button></div></div>`:''}
+    <div class="gymhead"><span class="dot" style="background:var(--brand)"></span><h3>Terrains en direct</h3></div>
+    ${live.length?live.map(m=>liveCourtRow(m.gym,`Terrain ${m.court} · Poule ${m.pool}`,m.a,m.b,'en cours',m)).join(''):'<p class="muted" style="font-size:13px">Aucun match en cours pour le moment.</p>'}`;
+    })()}
+    <button class="btn ghost" style="margin-top:14px" onclick="go('schedule')">📅 Voir le planning des matchs à venir</button>
+    <div class="gymhead"><span class="dot" style="background:var(--accent)"></span><h3>Déroulé du tournoi</h3></div>
+    ${(()=>{
+      const order=phaseOrder(), cur=order.indexOf(state.livePhase);
+      const badge=i=> i<cur?`<span class="badge ok">Terminé</span>` : i===cur?`<span class="badge warn">● En cours</span>` : `<span class="badge brand">À venir</span>`;
+      const subRules=ph=> phaseRulesSet(ph)?' · '+fmtRules(rulesFor(ph)):'';
+      const nxt=nextPhase(state.livePhase);
+      const rowDefs={
+        brassage:`<div class="phase"><div class="num">{N}</div><div style="flex:1"><b>Brassage</b><small>Poules de ${C.teamsPerPool} · ${fmtRules(rulesFor('brassage'))}</small></div>{B}</div>`,
+        poules2:`<div class="phase" style="cursor:pointer" onclick="setStandPhase('principal');go('standings')"><div class="num">{N}</div><div style="flex:1"><b>Principale &amp; Consolante</b><small>1ers–2es en Principale, 3es–4es en Consolante · rejoué en poules${subRules('poules2')}</small></div>{B}</div>`,
+        finales:`<div class="phase" style="cursor:pointer" onclick="go('bracket')"><div class="num">{N}</div><div style="flex:1"><b>Phases finales</b><small>${C.phaseConsolante?'Tableau à élimination':'Les 1ers–2es du brassage basculent directement en tableau à élimination'}${subRules('finales')}</small></div>{B}</div>`,
+      };
+      const rows=order.map((p,i)=> rowDefs[p].replace('{N}',i+1).replace('{B}',badge(i))).join('');
+      return `<div class="card">${rows}</div>
+    ${nxt
+      ? `<button class="btn" style="margin-top:12px;width:100%" onclick="openPhaseSwitch()">✅ Clôturer « ${phaseName(state.livePhase)} » → lancer « ${phaseName(nxt)} »</button>`
+      : `<p class="muted" style="text-align:center;margin-top:12px;font-size:12.5px">Dernière phase en cours — tableau à élimination.</p>`}
+    ${cur>0?`<button class="btn ghost sm" style="margin-top:8px;width:100%" onclick="revertPhase()">↩︎ Revenir à la phase précédente</button>`:''}`;
+    })()}
+  </div>`;
+  if(liveRules().timed) paintTimer();
+};
+/* ---------- Bottom sheet (pop-up) ---------- */
+function openSheet(inner){
+  const b=document.getElementById('sheet');
+  b.innerHTML=`<div class="sheet"><button class="sheet-close" aria-label="Fermer" onclick="closeSheet()">✕</button><div class="grab"></div>${inner}</div>`;
+  b.hidden=false;
+  b.onclick=(e)=>{ if(e.target===b) closeSheet(); };
+  requestAnimationFrame(()=>b.classList.add('show'));
+}
+function closeSheet(){
+  const b=document.getElementById('sheet');
+  b.classList.remove('show');
+  setTimeout(()=>{ b.hidden=true; b.innerHTML=''; b.onclick=null; }, 280);
+}
+window.closeSheet=closeSheet;
+window.openPhaseSwitch=()=>{
+  const cur=state.livePhase, nxt=nextPhase(cur);
+  if(!nxt) return;
+  const r=rulesFor(nxt); // défaut = copie des règles de brassage tant que non définies
+  const hor=horaireFor(nxt); // horaire de la phase suivante (défaut = horaire du brassage)
+  const intro = nxt==='finales'
+    ? 'Les équipes qualifiées sont basculées dans les tableaux à élimination.'
+    : 'Les équipes sont redistribuées : 1ers–2es en Principale'+(C.phaseConsolante?', 3es–4es en Consolante.':'.');
+  let finalStartBlock='';
+  if(nxt==='finales'){
+    const af=autoFinalLabel();
+    let fs=C.finalStart||'auto';
+    // On ne propose que les tours réellement atteignables avec le nb de qualifiés
+    if(fs!=='auto' && +fs>af.K) fs='auto';
+    const o=(v,txt)=>`<option value="${v}"${fs===v?' selected':''}>${txt}</option>`;
+    const rounds=[['16',16,'1/8 de finale (16 équipes)'],['8',8,'1/4 de finale (8 équipes)'],['4',4,'1/2 finale (4 équipes)']]
+      .filter(([,need])=> need<=af.K)
+      .map(([v,,txt])=> o(v,txt)).join('');
+    finalStartBlock = `
+      <p class="eyebrow" style="margin:0 0 2px">🎯 Tour de départ du tableau</p>
+      <div class="card" style="margin-bottom:14px">
+        <label class="field" style="margin:0"><span>Début de la phase finale · ${af.qual} qualifiés</span>
+          <select id="w_finalStart" onchange="updateFinalHint()">
+            ${o('auto','Automatique — '+af.label)}
+            ${rounds}
+          </select></label>
+        <div id="finalHint" style="font-size:12px;color:var(--muted);margin-top:8px;line-height:1.5"></div>
+      </div>`;
+  }
+  let gymSplitBlock='';
+  if(nxt==='poules2' && C.phaseConsolante && C.gyms>=2){
+    const on=!!C.splitPhase2ByGym;
+    gymSplitBlock = `
+      <p class="eyebrow" style="margin:0 0 2px">🏟️ Répartition des gymnases</p>
+      <div class="card" style="margin-bottom:14px">
+        <div class="toggle" style="margin:0">
+          <div><b>Une catégorie par gymnase</b><small>Principale au ${gymName(GYMS[0].id)}, Consolante au ${gymName(GYMS[1].id)} — un organisateur par gymnase.</small></div>
+          <button class="sw ${on?'on':''}" id="sw_splitgym" onclick="toggleSw('sw_splitgym')"></button>
+        </div>
+      </div>`;
+  }
+  openSheet(`
+    <h3 class="sheet-title">Fin de phase</h3>
+    <div class="card" style="background:var(--ok-soft);border:none;margin-bottom:12px;display:flex;gap:10px;align-items:flex-start">
+      <span style="font-size:22px">✅</span>
+      <div><b style="font-size:14px">Phase « ${phaseName(cur)} » terminée</b>
+      <p style="font-size:12.5px;color:var(--muted);margin:4px 0 0;line-height:1.5">Les classements de cette phase sont figés. Vous pouvez maintenant lancer la phase suivante.</p></div>
+    </div>
+    <div class="card" style="background:var(--brand-soft);border:none;margin-bottom:14px">
+      <b style="font-size:14px">${PHASE_ICON[nxt]} Phase suivante : ${phaseName(nxt)}</b>
+      <p style="font-size:12.5px;color:var(--muted);margin:6px 0 0;line-height:1.5">${intro} Vérifiez — et ajustez si besoin — les règles de match avant de démarrer.</p>
+    </div>
+    ${finalStartBlock}
+    ${gymSplitBlock}
+    <p class="eyebrow" style="margin:0 0 2px">${PHASE_ICON[nxt]} Règles · ${phaseName(nxt)}</p>
+    ${rulesCard('n_', r)}
+    <p class="eyebrow" style="margin:16px 0 2px">🕐 Horaire · ${phaseName(nxt)}</p>
+    <div class="card" style="background:var(--brand-soft);border:1.5px solid var(--brand)">
+      <p style="font-size:12px;color:var(--muted);margin:0 2px 10px;line-height:1.45">Ajustez les horaires pour cette phase. <b style="color:var(--fg)">Un tour</b> = durée d'un match + mise en place.</p>
+      <label class="field" style="margin:0"><span>Heure de début</span>
+        <input id="nh_start" type="time" value="${hor.startTime||'09:00'}" onchange="updatePhaseSchedPreview()">
+      </label>
+      <label class="field" style="margin:10px 0 0"><span>Durée d'un match (min)</span>${numCtl('nh_round',hor.roundMinutes||20,5,120)}</label>
+      <label class="field" style="margin:10px 0 0"><span>Mise en place entre les tours (min)</span>${numCtl('nh_setup',hor.setupMinutes!=null?hor.setupMinutes:10,0,60)}</label>
+      <div id="nhPreview" style="font-size:12px;margin:12px 2px 0;line-height:1.45;font-weight:700;color:var(--brand)"></div>
+    </div>
+    <button class="btn" style="margin-top:16px;width:100%" onclick="confirmPhaseSwitch()">Démarrer « ${phaseName(nxt)} »</button>
+    <button class="btn ghost" style="margin-top:8px;width:100%" onclick="closeSheet()">Annuler</button>
+  `);
+  ['nh_round','nh_setup'].forEach(id=>{ const el=document.getElementById(id); if(el){ el.addEventListener('live',updatePhaseSchedPreview); el.addEventListener('change',updatePhaseSchedPreview); } });
+  updatePhaseSchedPreview();
+  if(nxt==='finales') updateFinalHint();
+};
+window.updatePhaseSchedPreview=function(){
+  const box=document.getElementById('nhPreview'); if(!box) return;
+  const g=id=>document.getElementById(id);
+  const st=(g('nh_start')&&g('nh_start').value)||'09:00';
+  const rm=(+((g('nh_round')||{}).value))||20, su=(+((g('nh_setup')||{}).value))||0;
+  const per=rm+su, parts=st.split(':'), base=((+parts[0])||9)*60+((+parts[1])||0);
+  const fmt=t=>`${String(Math.floor(t/60)%24).padStart(2,'0')}:${String(t%60).padStart(2,'0')}`;
+  box.innerHTML=`Un tour toutes les ${per} min · Tour 1 à ${fmt(base)}, tour 2 à ${fmt(base+per)}, tour 3 à ${fmt(base+2*per)}…`;
+};
+window.confirmPhaseSwitch=()=>{
+  const cur=state.livePhase, nxt=nextPhase(cur); if(!nxt) return;
+  const g=id=>document.getElementById(id), base=rulesFor(nxt);
+  const r={
+    sets: g('n_sets')?+g('n_sets').value:base.sets,
+    pointsPerSet: g('n_pts')?+g('n_pts').value:base.pointsPerSet,
+    setMinutes: g('n_min')?+g('n_min').value:base.setMinutes,
+    timed: g('sw_n_timed')?g('sw_n_timed').classList.contains('on'):base.timed,
+    twoPointGap: g('sw_n_gap')?g('sw_n_gap').classList.contains('on'):base.twoPointGap,
+  };
+  setPhaseRules(nxt, r);
+  const bh=horaireFor(nxt);
+  setHoraire(nxt, {
+    startTime: g('nh_start')?g('nh_start').value:bh.startTime,
+    roundMinutes: g('nh_round')?+g('nh_round').value:bh.roundMinutes,
+    setupMinutes: g('nh_setup')?+g('nh_setup').value:bh.setupMinutes,
+  });
+  if(nxt==='finales' && g('w_finalStart')) state.config.finalStart=g('w_finalStart').value;
+  if(nxt==='poules2'){
+    if(g('sw_splitgym')) state.config.splitPhase2ByGym = g('sw_splitgym').classList.contains('on');
+    state.phasePrincipal=null; state.phaseConsolante=null; buildPhase2(); // applique la répartition choisie
+  }
+  state.livePhase=nxt;
+  const ct=state.tournaments.find(x=>x.id===state.currentDraftId); if(ct) ct.livePhase=nxt;
+  timerReset();
+  closeSheet();
+  toast(PHASE_ICON[nxt]+' '+phaseName(nxt)+(nxt==='finales'?' lancées':' lancée'));
+  render('orgLive');
+};
+window.revertPhase=()=>{
+  const o=phaseOrder(); const i=o.indexOf(state.livePhase);
+  if(i>0){ state.livePhase=o[i-1]; const ct=state.tournaments.find(x=>x.id===state.currentDraftId); if(ct) ct.livePhase=state.livePhase; timerReset(); toast('Retour : '+phaseName(state.livePhase)); render('orgLive'); }
+};
+function liveCourtRow(gym,label,a,b,st,m){
+  return `<div class="match"><div class="meta"><span class="chip">${gym}</span><span>${label}</span><span class="badge warn" style="margin-left:auto">● ${st}</span></div>
+    <div class="teams"><span class="t">${a}</span><span class="sc">${scoreSC(m||{})}</span><span class="t right">${b}</span></div>${refLine(m)}</div>`;
+}
+// Ligne « Arbitre » affichée dans une cellule de match (Accueil, planning, Mes matchs)
+function refLine(m){
+  return (m&&m.ref)?`<div class="muted" style="font-size:11px;margin-top:7px;display:flex;align-items:center;gap:5px"><span style="color:var(--brand);font-size:13px;display:inline-flex">${ICON.whistle}</span>Arbitre : <b style="color:var(--fg)">${m.ref}</b></div>`:'';
+}
+
+/* ---------- Phases du tournoi (brassage → poules2 → finales) ---------- */
+const PHASE_ORDER=['brassage','poules2','finales'];
+// Déroulé réel : sans Consolante, on passe directement du brassage aux phases finales (2 phases)
+function phaseOrder(cfg){ const c=cfg||state.config; return c&&c.phaseConsolante===false ? ['brassage','finales'] : ['brassage','poules2','finales']; }
+const PHASE_ICON={brassage:'🔄', poules2:'🏐', finales:'🏆'};
+function phaseName(p){
+  if(p==='poules2') return state.config.phaseConsolante ? 'Principale & Consolante' : 'Principale';
+  if(p==='finales') return 'Phases finales';
+  return 'Brassage';
+}
+function nextPhase(p){ const o=phaseOrder(); const i=o.indexOf(p); return i>=0&&i<o.length-1 ? o[i+1] : null; }
+function defaultRules(){ const c=state.config; return {sets:c.sets, pointsPerSet:c.pointsPerSet, twoPointGap:c.twoPointGap, timed:c.timed, setMinutes:c.setMinutes}; }
+function phaseRulesSet(p){ return p==='poules2' ? !!state.config.rules2 : p==='finales' ? !!state.config.finale : true; }
+function rulesFor(p){
+  if(p==='poules2') return state.config.rules2 || defaultRules();
+  if(p==='finales') return state.config.finale || defaultRules();
+  return state.config; // brassage
+}
+function setPhaseRules(p, r){ if(p==='poules2') state.config.rules2=r; else if(p==='finales') state.config.finale=r; }
+// Horaire par phase : le brassage utilise l'horaire défini dans l'assistant ;
+// chaque phase suivante peut avoir le sien (défaut = reprise de l'horaire du brassage).
+function baseHoraire(){ const c=state.config; return {startTime:c.startTime||'09:00', roundMinutes:c.roundMinutes||20, setupMinutes:c.setupMinutes!=null?c.setupMinutes:10}; }
+function horaireFor(p){
+  const c=state.config;
+  if(p==='poules2') return c.horaire2 || baseHoraire();
+  if(p==='finales') return c.horaireF || baseHoraire();
+  return baseHoraire();
+}
+function setHoraire(p, hor){
+  if(p==='poules2') state.config.horaire2=hor;
+  else if(p==='finales') state.config.horaireF=hor;
+  else { state.config.startTime=hor.startTime; state.config.roundMinutes=hor.roundMinutes; state.config.setupMinutes=hor.setupMinutes; }
+}
+/* ---------- Règles de la phase en cours ---------- */
+function liveRules(){ return rulesFor(state.livePhase); }
+function fmtRules(r){ const n=r.sets||1; return `${n===1?'1 set':n+' sets'} · ${r.timed?`au temps (${r.setMinutes||15} min)`:`${r.pointsPerSet||25} pts${r.twoPointGap?", 2 d'écart":''}`}`; }
+
+/* ---------- Chrono (set au temps) ---------- */
+const timer={ remaining:(liveRules().setMinutes||15)*60, running:false, round:1, id:null, ended:false, started:false, endAt:null, preAlertDone:false };
+const PRE_ALERT=30; // secondes avant la fin pour la pré-alerte
+function fmtClock(s){ s=Math.max(0,s); const m=Math.floor(s/60), ss=s%60; return `${String(m).padStart(2,'0')}:${String(ss).padStart(2,'0')}`; }
+function timerCard(){
+  return `<div class="card" id="tmCard" style="margin-bottom:12px;text-align:center;padding:18px 16px">
+    <div style="display:flex;align-items:center;justify-content:center;gap:8px;color:var(--muted);font-size:12.5px;font-weight:700;text-transform:uppercase;letter-spacing:.04em">
+      <span>⏱️ Set au temps</span><span>·</span><span>Tour <span id="tmRound">${timer.round}</span></span>
+    </div>
+    <div id="tmDisplay" style="font-family:var(--font-display);font-weight:800;font-size:62px;line-height:1.05;margin:6px 0 2px;font-variant-numeric:tabular-nums">${fmtClock(timer.remaining)}</div>
+    <div id="tmHint" class="muted" style="font-size:12.5px;margin-bottom:12px">Durée du set : ${liveRules().setMinutes||15} min</div>
+    <div class="btn-row">
+      <button class="btn" id="tmToggle" onclick="timerToggle()">Lancer le tour</button>
+      <button class="btn ghost" id="tmReset" onclick="timerReset()" style="flex:none;width:52px" aria-label="Réinitialiser">↺</button>
+    </div>
+    <div class="btn-row" style="margin-top:8px">
+      <button class="btn ghost sm" id="tmEnd" onclick="timerEndSet()">⏹ Fin du set (25 pts)</button>
+      <button class="btn ghost sm" onclick="timerNext()">Tour suivant →</button>
+    </div>
+    <p class="muted" id="tmWake" style="font-size:11px;margin:12px 2px 0;line-height:1.4">🔆 L'écran reste allumé tant que le chrono tourne. 🔕 Pré-alerte à 30 s, 🔔 sonnerie + vibration à la fin.</p>
+  </div>`;
+}
+function paintTimer(){
+  const d=document.getElementById('tmDisplay'); if(!d) return;
+  const full=(liveRules().setMinutes||15)*60;
+  if(!timer.started){ timer.remaining=full; } // au repos : suit la durée configurée
+  const timeout=timer.remaining<=0;            // chrono arrivé à zéro
+  const stopped=timer.ended && !timeout;        // arrêté à la main (25 pts)
+  const nearEnd=timer.running && timer.remaining>0 && timer.remaining<=PRE_ALERT; // dernières 30 s
+  d.textContent=fmtClock(timer.remaining);
+  d.style.color = timeout?'var(--danger)' : stopped?'var(--ok)' : nearEnd?'var(--warn,#b8860b)' : timer.running?'var(--brand)' : 'var(--fg)';
+  const r=document.getElementById('tmRound'); if(r) r.textContent=timer.round;
+  const t=document.getElementById('tmToggle');
+  if(t) t.textContent = timeout?'Temps écoulé' : stopped?'Reprendre' : timer.running?'Pause' : (timer.remaining<full?'Reprendre':'Lancer le tour');
+  const h=document.getElementById('tmHint');
+  if(h) h.textContent = timeout?'🔔 Temps écoulé — sifflez la fin !' : stopped?'✋ Set arrêté (25 pts atteints)' : nearEnd?'⚠️ Dernières 30 secondes !' : `Durée du set : ${liveRules().setMinutes||15} min`;
+  const c=document.getElementById('tmCard'); if(c) c.style.background = timeout?'var(--danger-soft)' : stopped?'var(--ok-soft)' : nearEnd?'var(--warn-soft,#f6e6c3)' : 'var(--surface)';
+  const e=document.getElementById('tmEnd'); if(e) e.disabled = timeout||stopped;
+}
+/* Audio débloqué au premier geste utilisateur (lancement du tour), réutilisé pour la sonnerie. */
+let _ac=null;
+function ensureAudio(){ try{ if(!_ac) _ac=new (window.AudioContext||window.webkitAudioContext)(); if(_ac.state==='suspended') _ac.resume(); }catch(e){ return null; } return _ac; }
+function timerBuzz(){
+  const a=ensureAudio();
+  if(a){ try{
+    const now=a.currentTime;
+    [0,.35,.70].forEach((t,i)=>{
+      const o=a.createOscillator(), g=a.createGain();
+      o.connect(g); g.connect(a.destination); o.type='square';
+      o.frequency.value = i===2?1100:880;
+      g.gain.setValueAtTime(.0001, now+t);
+      g.gain.exponentialRampToValueAtTime(.3, now+t+.02);
+      g.gain.exponentialRampToValueAtTime(.0001, now+t+.28);
+      o.start(now+t); o.stop(now+t+.3);
+    });
+  }catch(e){} }
+  try{ if(navigator.vibrate) navigator.vibrate([250,120,250,120,400]); }catch(e){}
+}
+/* Pré-alerte (30 s avant la fin) : signal plus doux et distinct de la sonnerie finale. */
+function timerPreBuzz(){
+  const a=ensureAudio();
+  if(a){ try{
+    const now=a.currentTime;
+    [0,.28].forEach((t)=>{
+      const o=a.createOscillator(), g=a.createGain();
+      o.connect(g); g.connect(a.destination); o.type='sine';
+      o.frequency.value=560;
+      g.gain.setValueAtTime(.0001, now+t);
+      g.gain.exponentialRampToValueAtTime(.18, now+t+.02);
+      g.gain.exponentialRampToValueAtTime(.0001, now+t+.2);
+      o.start(now+t); o.stop(now+t+.22);
+    });
+  }catch(e){} }
+  try{ if(navigator.vibrate) navigator.vibrate(180); }catch(e){}
+}
+/* Empêche le verrouillage auto de l'écran pendant un tour. */
+let _wake=null;
+async function requestWake(){ try{ if('wakeLock' in navigator){ _wake=await navigator.wakeLock.request('screen'); } }catch(e){} }
+function releaseWake(){ try{ if(_wake){ _wake.release(); _wake=null; } }catch(e){} }
+function timerTick(){
+  // Temps restant calculé sur l'horloge réelle : fiable même après un gel (écran verrouillé / app en arrière-plan).
+  if(timer.endAt){ timer.remaining = Math.max(0, Math.round((timer.endAt - Date.now())/1000)); }
+  else { timer.remaining--; }
+  if(timer.remaining<=0){ timer.remaining=0; timerStop(); timerBuzz(); }
+  else if(timer.remaining<=PRE_ALERT && !timer.preAlertDone){ timer.preAlertDone=true; timerPreBuzz(); }
+  paintTimer();
+}
+function timerStop(){ if(timer.id){ clearInterval(timer.id); timer.id=null; } timer.running=false; timer.endAt=null; releaseWake(); }
+window.timerToggle=()=>{
+  if(timer.remaining<=0 || timer.ended){ timer.remaining=(liveRules().setMinutes||15)*60; timer.ended=false; timer.preAlertDone=false; }
+  if(timer.running){ timerStop(); }
+  else {
+    ensureAudio();                                    // débloque l'audio (geste utilisateur)
+    timer.running=true; timer.started=true;
+    timer.endAt = Date.now() + timer.remaining*1000;  // ancre horloge réelle
+    timer.id=setInterval(timerTick,250);              // tick fin → resync rapide au réveil
+    requestWake();                                    // garde l'écran allumé
+    toast('Tour '+timer.round+' lancé');
+  }
+  paintTimer();
+};
+window.timerEndSet=()=>{ timerStop(); timer.ended=true; paintTimer(); toast('Set arrêté — 25 points atteints'); };
+window.timerReset=()=>{ timerStop(); timer.ended=false; timer.started=false; timer.preAlertDone=false; timer.remaining=(liveRules().setMinutes||15)*60; paintTimer(); };
+window.timerNext=()=>{ timerStop(); timer.ended=false; timer.preAlertDone=false; timer.round++; timer.remaining=(liveRules().setMinutes||15)*60; paintTimer(); toast('Tour '+timer.round+' prêt'); };
+/* Au retour de l'app au premier plan : resync immédiat + reprise du wake lock (relâché pendant la mise en arrière-plan). */
+document.addEventListener&&document.addEventListener('visibilitychange',()=>{
+  if(document.visibilityState==='visible' && timer.running){ requestWake(); timerTick(); }
+});
+
+/* ---------- Planning / matchs à venir (organisateur) ---------- */
+let schedGym='all';
+function schedBadge(s){
+  return s==='done'?`<span class="badge ok" style="margin-left:auto">Terminé</span>`
+    : s==='live'?`<span class="badge warn" style="margin-left:auto">● En cours</span>`
+    : `<span class="badge brand" style="margin-left:auto">À venir</span>`;
+}
+function schedRow(m){
+  const sc = m.status==='upcoming' ? `<span class="vs">vs</span>` : scoreSC(m);
+  return `<div class="match">
+    <div class="meta"><span class="chip">${m.gym}</span><span>Terrain ${m.court} · Poule ${m.pool}</span>${schedBadge(m.status)}</div>
+    <div class="teams"><span class="t">${m.a}</span><span class="sc">${sc}</span><span class="t right">${m.b}</span></div>${refLine(m)}</div>`;
+}
+let schedPhase='brassage';
+window.setSchedPhase=k=>{ schedPhase=k; schedGym='all'; render('schedule'); };
+screens.schedule = ()=>{
+  setTop(null); renderTabs('schedule');
+  const schedule=phaseData(schedPhase).schedule||[];
+  const gyms=['all',...new Set(schedule.map(m=>m.gym))];
+  const rounds=[...new Set(schedule.map(m=>m.r))].sort((a,b)=>a-b);
+  const lbl=g=> g==='all'?'Tous':g;
+  const nAvenir=schedule.filter(m=>m.status==='upcoming'&&(schedGym==='all'||m.gym===schedGym)).length;
+  const phaseName = schedPhase==='brassage'?'Phase de brassage':`Phase 2 · ${PHASE_LABEL[schedPhase]}`;
+  const vh = horaireFor(schedPhase==='brassage'?'brassage':'poules2');
+  const vRound=(+vh.roundMinutes)||20, vSetup=vh.setupMinutes!=null?+vh.setupMinutes:10;
+  let h=`<div style="padding:0">
+    <h3 style="font-size:19px;margin-bottom:2px">Planning des matchs</h3>
+    <p class="muted" style="margin:0 0 6px;font-size:13px">${phaseName} · ${nAvenir} match${nAvenir>1?'s':''} à venir</p>
+    <p class="muted" style="margin:0 0 10px;font-size:11.5px;line-height:1.4">🕐 Début ${vh.startTime||'09:00'} · un tour toutes les ${vRound+vSetup} min (${vRound} min de jeu + ${vSetup} min de mise en place)</p>
+    ${phaseSeg(schedPhase,'setSchedPhase')}
+    <div class="seg">${gyms.map(g=>`<button class="${schedGym===g?'on':''}" onclick="schedGym='${g}';render('schedule')">${lbl(g)}</button>`).join('')}</div>`;
+  rounds.forEach(r=>{
+    const ms=schedule.filter(m=>m.r===r&&(schedGym==='all'||m.gym===schedGym));
+    if(!ms.length) return;
+    const done=ms.every(m=>m.status==='done'), live=ms.some(m=>m.status==='live');
+    const col=done?'var(--ok)':live?'var(--warn)':'var(--brand)';
+    h+=`<div class="gymhead"><span class="dot" style="background:${col}"></span><h3>Tour ${r}</h3><span class="count" style="margin-left:auto;color:var(--muted);font-weight:600">${ms[0].time}</span></div>`;
+    ms.forEach(m=> h+=schedRow(m));
+  });
+  h+=`</div>`;
+  host.innerHTML=h;
+};
+
+let standPool=null;
+function poolStandingRows(p){
+  const n=p.teams.length, j=Math.max(0,n-1);
+  const rows=p.teams.map((t,i)=>{
+    const h=[...t.t].reduce((a,c)=>a+c.charCodeAt(0),0);
+    const g=Math.min(j,(h+i)%(n||1));
+    const pf=58+((h+i*5)%26), pc=52+((h*2+i*3)%24);
+    const win=state.config.winPts??3, loss=state.config.lossPts??0;
+    return {t:t.t, j, g, p:j-g, pts:g*win+(j-g)*loss, pf, pc};
+  });
+  rows.sort((a,b)=> b.pts-a.pts || (b.pf-b.pc)-(a.pf-a.pc) || a.t.localeCompare(b.t));
+  return rows;
+}
+let standPhase='brassage';
+const PHASE_LABEL={brassage:'Brassage',principal:'Principale',consolante:'Consolante'};
+function phaseSeg(current,fn){
+  const keys=['brassage','principal',...(state.config.phaseConsolante?['consolante']:[])];
+  return `<div class="seg" style="margin-bottom:8px">${keys.map(k=>`<button class="${current===k?'on':''}" onclick="${fn}('${k}')">${PHASE_LABEL[k]}</button>`).join('')}</div>`;
+}
+window.setStandPhase=k=>{ standPhase=k; standPool=null; render('standings'); };
+screens.standings = ()=>{
+  setTop(null); renderTabs('standings');
+  const pools=phaseData(standPhase).pools||[];
+  if(!standPool || !pools.find(p=>p.letter===standPool)) standPool = pools[0]?pools[0].letter:null;
+  const p=pools.find(x=>x.letter===standPool);
+  const qualNote = standPhase==='brassage'
+    ? `<span class="rk top" style="margin:0 4px 0 0">1</span>1ers &amp; 2es → Principale · 3es &amp; 4es → Consolante.`
+    : `<span class="rk top" style="margin:0 4px 0 0">1</span>Les mieux classés sont têtes de série pour les phases finales.`;
+  if(!p){ host.innerHTML=`<div style="padding:0"><h3 style="font-size:19px;margin-bottom:4px">Classements par poule</h3>${phaseSeg(standPhase,'setStandPhase')}<p class="muted" style="margin-top:10px">Aucune poule pour cette phase.</p></div>`; return; }
+  const rows=poolStandingRows(p);
+  const courtLabel=`${gymName(p.gym)} · T${p.court}`;
+  host.innerHTML=`<div style="padding:0">
+    <h3 style="font-size:19px;margin-bottom:4px">Classements · ${PHASE_LABEL[standPhase]}</h3>
+    ${phaseSeg(standPhase,'setStandPhase')}
+    <div class="seg" style="flex-wrap:wrap">${pools.map(x=>`<button class="${x.letter===standPool?'on':''}" style="flex:1 0 auto;min-width:40px" onclick="standPool='${x.letter}';render('standings')">${x.letter}</button>`).join('')}</div>
+    <div class="pool"><div class="ph">Poule ${p.letter}<span class="tn">${courtLabel}</span></div>
+    <div style="overflow-x:auto">
+    <table class="tbl" style="min-width:400px"><thead><tr><th>Équipe</th><th>J</th><th>V</th><th>PP</th><th>PC</th><th>Diff</th><th>Pts</th></tr></thead><tbody>
+    ${rows.map((r,i)=>{const d=r.pf-r.pc;const dc=d>0?'var(--ok)':d<0?'var(--danger)':'var(--muted)';return `<tr class="${i<2?'qual':''}"><td><span class="rk ${i<2?'top':''}">${i+1}</span>${r.t}</td><td>${r.j}</td><td style="color:var(--ok);font-weight:800">${r.g}</td><td>${r.pf}</td><td>${r.pc}</td><td style="color:${dc};font-weight:800">${d>0?'+':''}${d}</td><td><b>${r.pts}</b></td></tr>`;}).join('')}
+    </tbody></table></div></div>
+    <p class="muted" style="font-size:12px;margin-top:10px;line-height:1.6"><b>V</b> victoires · <b>PP</b> points pour · <b>PC</b> points contre · <b>Diff</b> différence · <b>Pts</b> points de classement (${state.config.winPts??3} par victoire, ${state.config.lossPts??0} par défaite).</p>
+    <p class="muted" style="font-size:12.5px;margin-top:6px">${qualNote}</p>
+  </div>`;
+};
+
+screens.validate = ()=>{
+  setTop(null); renderTabs('validate');
+  if(!conflicts.length){ host.innerHTML=`<div style="padding:0;text-align:center;margin-top:40px"><div style="font-size:46px">✅</div><h3 style="margin-top:10px">Aucun conflit</h3><p class="lead">Tous les scores concordent.</p></div>`; return; }
+  host.innerHTML=`<div style="padding:0">
+    <h3 style="font-size:19px">Scores à valider</h3>
+    <p class="lead">Les deux capitaines ont saisi des scores différents.</p>
+    ${conflicts.map(c=>`<div class="card" style="margin-top:12px">
+      <div class="meta" style="display:flex;gap:8px;font-size:11.5px;color:var(--muted);font-weight:700"><span class="chip">Poule ${c.pool}</span><span class="chip">Terrain ${c.court}</span></div>
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-top:12px"><b>${c.a}</b><b>${c.b}</b></div>
+      <div style="display:flex;gap:10px;margin-top:10px">
+        <button class="btn outline" style="flex-direction:column;gap:2px" onclick="resolveConflict('${c.id}','A')">
+          <small style="font-weight:600">Capitaine ${c.a}</small><span style="font-size:20px;font-weight:800">${c.capA.sa} – ${c.capA.sb}</span></button>
+        <button class="btn outline" style="flex-direction:column;gap:2px" onclick="resolveConflict('${c.id}','B')">
+          <small style="font-weight:600">Capitaine ${c.b}</small><span style="font-size:20px;font-weight:800">${c.capB.sa} – ${c.capB.sb}</span></button>
+      </div>
+      <button class="btn ghost sm" style="width:100%;margin-top:10px" onclick="toast('Saisie manuelle ouverte (démo)')">Saisir un autre score</button>
+    </div>`).join('')}
+  </div>`;
+};
+window.resolveConflict=(id,pick)=>{ const i=conflicts.findIndex(c=>c.id===id); if(i>-1)conflicts.splice(i,1); toast('Score validé — classement mis à jour'); renderTabs('validate'); screens.validate(); };
+
+let bracketCat='principal';
+window.setBracketCat=k=>{ bracketCat=k; render('bracket'); };
+screens.bracket = ()=>{
+  setTop(null); renderTabs('bracket');
+  if(bracketCat==='consolante' && !state.config.phaseConsolante) bracketCat='principal';
+  const cat=phaseData(bracketCat);
+  const catLabel=PHASE_LABEL[bracketCat];
+  const br=buildBracket(cat);
+  const names=roundNames(br.K);
+  // 1er tour : têtes de série (favori à gauche) l'emportent — démo
+  const F=rulesFor('finales');
+  const nSets=F.sets||1;
+  const fmtNote=fmtRules(F);
+  const rm=inner=>`<div class="rmatch">${inner}</div>`;
+  const sim=simulateBracket(br);
+  const hi=F.timed?21:(F.pointsPerSet||25);
+  let cols='';
+  sim.rounds.forEach((matches,ci)=>{
+    const inner=matches.map((mm,i)=> rm(bm(mm.a,mm.b,true,demoSets(nSets,ci*4+i,hi)))).join('');
+    cols+=`<div class="round"><h4>${names[ci]}</h4><div class="rmatches">${inner}</div></div>`;
+  });
+  const rw=132+nSets*20;
+  const petiteBlock = sim.hasSemis ? `
+    <div class="gymhead" style="margin-top:20px"><span class="dot" style="background:var(--accent)"></span><h3>Petite finale · 3ᵉ place</h3></div>
+    <p class="muted" style="margin:-2px 0 10px;font-size:12px;line-height:1.45">Les deux perdants des demi-finales s'affrontent pour la 3ᵉ place.</p>
+    <div class="bracket" style="--rw:${rw}px"><div class="round"><h4>3ᵉ place</h4><div class="rmatches">${rm(bm(sim.petite.a, sim.petite.b, true, demoSets(nSets,99,hi)))}</div></div></div>` : '';
+  const step=(medal,name,rank,h,bg,fg)=>`<div style="flex:1;text-align:center;min-width:0">
+      <div style="font-size:${rank==='1ᵉʳ'?'30px':'22px'}">${medal}</div>
+      <div style="background:${bg};color:${fg};border-radius:12px 12px 0 0;padding:8px 5px;margin-top:4px;height:${h}px;display:flex;align-items:center;justify-content:center">
+        <b style="font-size:12.5px;line-height:1.2;overflow-wrap:anywhere">${name}</b></div>
+      <small class="muted" style="display:block;margin-top:3px;font-weight:700">${rank}</small>
+    </div>`;
+  const podium=`<div class="card" style="margin-top:16px;background:linear-gradient(165deg,var(--brand-soft),var(--surface));border:none">
+    <div style="text-align:center;font-family:var(--font-display);font-weight:800;font-size:15px;margin-bottom:14px">🏆 Podium · ${catLabel}</div>
+    <div style="display:flex;align-items:flex-end;justify-content:center;gap:8px">
+      ${step('🥈',sim.runnerUp,'2ᵉ',64,'var(--surface-2)','var(--fg)')}
+      ${step('🥇',sim.champion,'1ᵉʳ',88,'var(--brand)','#fff')}
+      ${step('🥉',sim.hasSemis?sim.third:'—','3ᵉ',46,'var(--surface-2)','var(--fg)')}
+    </div>
+    <p class="muted" style="text-align:center;font-size:11px;margin:14px 4px 0;line-height:1.45">Classement de démonstration (les têtes de série l'emportent). Les vrais résultats s'afficheront au fil des matchs.</p>
+  </div>`;
+  host.innerHTML=`<div style="padding:0">
+    <h3 style="font-size:19px;margin-bottom:4px">Phase finale · ${catLabel}</h3>
+    <p class="lead" style="margin-top:0">${br.K} équipes qualifiées · départ en ${names[0]==='Finale'?'finale directe':names[0]+' de finale'}.</p>
+    <p class="muted" style="margin:-4px 0 10px;font-size:12px">🏆 Règles des finales : <b>${fmtNote}</b></p>
+    <div class="seg">
+      <button class="${bracketCat==='principal'?'on':''}" onclick="setBracketCat('principal')">Principale</button>
+      ${state.config.phaseConsolante?`<button class="${bracketCat==='consolante'?'on':''}" onclick="setBracketCat('consolante')">Consolante</button>`:''}
+    </div>
+    <div class="bracket" style="--rw:${rw}px">${cols}</div>
+    ${petiteBlock}
+    ${podium}
+  </div>`;
+};
+function demoSets(n, salt, hi){
+  // démo : l'équipe de gauche (favori) gagne ; scores par set, longueur = n sets
+  hi=hi||25;
+  const aw=Math.ceil((n+1)/2);          // sets gagnés par le vainqueur
+  const lose=new Set();                  // sets perdus par le vainqueur (placés au milieu)
+  for(let k=0;k<n-aw;k++) lose.add(2*k+1);
+  const out=[];
+  for(let i=0;i<n;i++){
+    const winnerTakes=!lose.has(i), lo=Math.max(0, hi-2-((i+salt)*3)%7);
+    out.push(winnerTakes?[hi,lo]:[lo,hi]); // [points A, points B], A = favori/vainqueur
+  }
+  return out;
+}
+function bm(a, b, aWin, sets){
+  const played=!!(sets&&sets.length);
+  const row=(t,isA,win)=>`<div class="r ${played&&win?'win':''}"><span class="nm">${t}</span><span class="sc">${
+    played ? sets.map(s=>`<b>${isA?s[0]:s[1]}</b>`).join('') : '<b>–</b>'
+  }</span></div>`;
+  return `<div class="bm">${row(a,true,aWin)}${row(b,false,!aWin)}</div>`;
+}
+
+/* ---------- Captain flow ---------- */
+/* ---------- Référents gymnase ---------- */
+function genRefPassword(){
+  const a='ABCDEFGHJKLMNPQRSTUVWXYZ', n='23456789';
+  const pick=(s,k)=>Array.from({length:k},()=>s[Math.floor(Math.random()*s.length)]).join('');
+  return 'VBO-'+pick(a,1)+pick(n,1)+pick(a,1)+pick(n,1)+pick(a,1)+pick(n,1);
+}
+const REF_LINK='https://tournoi-vbo.app/referent';
+let lastRef=null;
+function refDateStr(ts){
+  if(!ts) return '—';
+  const d=new Date(ts); if(isNaN(d)) return '—';
+  const ms=['janv.','févr.','mars','avr.','mai','juin','juil.','août','sept.','oct.','nov.','déc.'];
+  return `${d.getDate()} ${ms[d.getMonth()]} ${d.getFullYear()} à ${String(d.getHours()).padStart(2,'0')}:${String(d.getMinutes()).padStart(2,'0')}`;
+}
+
+screens.adminReferents = ()=>{
+  setTop('Référents gymnase'); tabbar.hidden=true;
+  const list=state.referents;
+  const active=list.filter(r=>r.status!=='suspended').length;
+  host.innerHTML=`<div style="padding:0">
+    <div class="card" style="background:var(--brand-soft);border:none;margin-bottom:14px;display:flex;gap:12px;align-items:flex-start">
+      <span style="display:inline-flex;color:var(--brand);margin-top:1px;font-size:18px">${ICON.referee}</span>
+      <small class="muted">Les référents sont les personnes présentes dans les gymnases le jour de l'événement. Chaque compte reçoit par e-mail son accès (lien + mot de passe) et peut suivre tous les tournois.</small>
+    </div>
+    <p class="eyebrow" style="margin:4px 0 8px">${list.length} compte${list.length>1?'s':''}${active<list.length?` · ${active} actif${active>1?'s':''}`:''}</p>
+    ${list.length?list.map(r=>{
+      const susp=r.status==='suspended';
+      return `<button class="list-item" style="width:100%;text-align:left;background:var(--surface);${susp?'opacity:.72':''}" onclick="go('refProfile',{id:'${r.id}'})">
+        <span class="ic" style="background:var(--brand-soft);color:var(--brand)">${ICON.referee}</span>
+        <span style="min-width:0"><b>${r.name}</b><small>${r.email}</small></span>
+        <span class="badge ${susp?'warn':'ok'}" style="margin-left:auto;flex:none">${susp?'Suspendu':'Actif'}</span>
+        <span class="chev">›</span>
+      </button>`;
+    }).join(''):`<div class="empty">👥<p>Aucun référent pour l'instant.</p></div>`}
+    <button class="btn accent" style="margin-top:18px" onclick="go('createRef')">＋ Créer un référent</button>
+  </div>`;
+};
+
+screens.refProfile = (opts)=>{
+  setTop('Profil référent'); tabbar.hidden=true;
+  const r=state.referents.find(x=>x.id===(opts&&opts.id));
+  if(!r){ host.innerHTML='<div class="empty">👤<p>Référent introuvable.</p></div>'; return; }
+  const susp=r.status==='suspended';
+  host.innerHTML=`<div style="padding:0">
+    <div class="card" style="display:flex;align-items:center;gap:12px;margin-bottom:14px">
+      <span style="width:48px;height:48px;border-radius:14px;background:var(--brand-soft);color:var(--brand);display:grid;place-items:center;font-size:22px;flex:none">${ICON.referee}</span>
+      <div style="min-width:0"><div style="font-family:var(--font-display);font-weight:800;font-size:17px">${r.name}</div>
+        <span class="badge ${susp?'warn':'ok'}" style="margin-top:4px">${susp?'● Suspendu':'● Actif'}</span></div>
+    </div>
+    ${susp?`<div class="card" style="background:var(--warn-soft);border:none;margin-bottom:12px"><small class="muted">⏸️ Ce compte est suspendu : le référent ne peut plus se connecter tant qu'il n'est pas réactivé.</small></div>`:''}
+    <p class="eyebrow" style="margin:4px 0 8px">Identifiants</p>
+    <div class="card" style="padding:2px 16px;overflow:hidden">
+      <div class="summary-row"><span class="muted">E-mail</span><b style="word-break:break-all">${r.email}</b></div>
+      <div class="summary-row">
+        <span class="muted">Mot de passe</span>
+        <span style="display:flex;align-items:center;gap:8px;margin-left:auto">
+          <b id="rp_pwd" data-full="${r.password}" style="letter-spacing:.04em;font-family:var(--font-display)">••••••••</b>
+          <button type="button" class="pwd-eye" style="position:static;transform:none" aria-label="Afficher le mot de passe" onclick="toggleProfilePwd(this)">${EYE_ON}</button>
+        </span>
+      </div>
+      <div class="summary-row" style="border-bottom:none"><span class="muted">Créé le</span><span>${refDateStr(r.createdAt)}</span></div>
+    </div>
+    <button class="btn ghost" style="margin-top:14px" onclick="showRefMail('${r.id}')">✉️ Revoir / renvoyer l'e-mail d'accès</button>
+    <p class="eyebrow" style="margin:20px 0 8px">Gestion du compte</p>
+    <button class="btn ghost" style="display:flex;align-items:center;justify-content:center;gap:8px" onclick="toggleRefSuspend('${r.id}')">
+      <span style="display:inline-flex;color:${susp?'var(--ok)':'var(--warn)'}">${susp?ICON.referee:ICON.pause}</span>${susp?'Réactiver le compte':'Suspendre le compte'}</button>
+    <button class="btn ghost" style="margin-top:10px;display:flex;align-items:center;justify-content:center;gap:8px;color:var(--danger)" onclick="confirmDeleteRef('${r.id}')">
+      <span style="display:inline-flex">${ICON.trash}</span>Supprimer le référent</button>
+  </div>`;
+};
+window.toggleProfilePwd=(btn)=>{
+  const el=document.getElementById('rp_pwd'); if(!el) return;
+  const hidden=el.textContent.indexOf('•')>=0;
+  el.textContent=hidden?el.getAttribute('data-full'):'••••••••';
+  btn.innerHTML=hidden?EYE_OFF:EYE_ON;
+  btn.setAttribute('aria-label', hidden?'Masquer le mot de passe':'Afficher le mot de passe');
+};
+window.toggleRefSuspend=(id)=>{
+  const r=state.referents.find(x=>x.id===id); if(!r) return;
+  r.status = r.status==='suspended' ? 'active' : 'suspended';
+  toast(r.status==='suspended'?'Compte suspendu':'Compte réactivé');
+  render('refProfile',{id});
+};
+window.confirmDeleteRef=(id)=>{
+  const r=state.referents.find(x=>x.id===id); if(!r) return;
+  openSheet(`<h3 style="font-size:18px;margin:2px 0 4px;font-family:var(--font-display)">Supprimer ce référent ?</h3>
+    <p class="muted" style="font-size:13px;line-height:1.55;margin:0 0 16px">Le compte de <b>${r.name}</b> (${r.email}) sera définitivement supprimé. Cette action est irréversible et son accès ne fonctionnera plus.</p>
+    <button class="btn" style="width:100%;background:var(--danger)" onclick="doDeleteRef('${id}')">Supprimer définitivement</button>
+    <button class="btn ghost" style="width:100%;margin-top:10px" onclick="closeSheet()">Annuler</button>`);
+};
+window.doDeleteRef=(id)=>{
+  const i=state.referents.findIndex(x=>x.id===id);
+  if(i>=0) state.referents.splice(i,1);
+  closeSheet(); toast('Référent supprimé');
+  go('adminReferents');
+};
+
+screens.createRef = ()=>{
+  setTop('Nouveau référent'); tabbar.hidden=true;
+  host.innerHTML=`<div style="padding:0">
+    <div class="card">
+      <h3 style="font-size:18px;margin-bottom:2px">Créer un accès référent</h3>
+      <p class="lead">À la validation, un e-mail contenant le lien d'accès et le mot de passe est envoyé automatiquement.</p>
+      <label class="field"><span>Nom du référent</span><input id="rf_name" placeholder="Prénom Nom" autocomplete="off"></label>
+      <label class="field"><span>Adresse e-mail</span><input id="rf_mail" type="email" placeholder="nom@exemple.fr" autocomplete="off"></label>
+      <label class="field"><span>Mot de passe</span>
+        <span class="pwd-wrap">
+          <input id="rf_pass" type="password" placeholder="Au moins 6 caractères" autocomplete="new-password">
+          <button type="button" class="pwd-eye" aria-label="Afficher le mot de passe" onclick="togglePwd(this,'rf_pass')">${EYE_ON}</button>
+        </span></label>
+      <button type="button" class="btn ghost sm" style="margin-top:2px" onclick="var i=document.getElementById('rf_pass');i.value=genRefPassword();i.type='text';toast('Mot de passe généré')">🎲 Générer un mot de passe sécurisé</button>
+      <div class="card" style="background:var(--surface-2);border:none;margin:12px 0 0">
+        <small class="muted">🔒 Le lien d'accès et ce mot de passe sont transmis au référent par e-mail à la validation.</small>
+      </div>
+      <button class="btn" style="margin-top:18px" onclick="submitReferent()">Valider &amp; envoyer l'e-mail</button>
+    </div>
+  </div>`;
+};
+window.submitReferent=()=>{
+  const name=(document.getElementById('rf_name').value||'').trim();
+  const email=(document.getElementById('rf_mail').value||'').trim();
+  const pass=(document.getElementById('rf_pass').value||'').trim();
+  if(!name){ toast('Indiquez le nom du référent'); return; }
+  if(!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)){ toast('Adresse e-mail invalide'); return; }
+  if(state.referents.some(x=>x.email.toLowerCase()===email.toLowerCase())){ toast('Un référent utilise déjà cet e-mail'); return; }
+  if(!pass){ toast('Choisissez un mot de passe (ou générez-en un)'); return; }
+  if(pass.length<6){ toast('Mot de passe trop court (6 caractères min.)'); return; }
+  const r={id:'r'+Date.now(), name, email, password:pass, createdAt:Date.now(), status:'active'};
+  state.referents.push(r);
+  lastRef=r;
+  go('refMail');
+};
+window.showRefMail=(id)=>{ lastRef=state.referents.find(r=>r.id===id)||null; go('refMail'); };
+
+screens.refMail = ()=>{
+  setTop('E-mail envoyé'); tabbar.hidden=true;
+  const r=lastRef;
+  if(!r){ host.innerHTML='<div class="empty">✉️<p>Aucun e-mail à afficher.</p></div>'; return; }
+  host.innerHTML=`<div style="padding:0">
+    <div class="card" style="background:var(--ok-soft);border:none;margin-bottom:14px;display:flex;align-items:center;gap:10px">
+      <span style="font-size:20px">✅</span><div><b style="font-size:14px">E-mail envoyé à ${r.name}</b><br><small class="muted">${r.email}</small></div>
+    </div>
+    <p class="eyebrow" style="margin:4px 0 8px">Aperçu de l'e-mail</p>
+    <div class="card" style="padding:0;overflow:hidden">
+      <div style="background:var(--brand);color:#fff;padding:16px 16px 14px">
+        <div style="display:flex;align-items:center;gap:8px;font-weight:800;font-family:var(--font-display)">
+          <span style="width:30px;height:30px;border-radius:8px;background:#fff;display:grid;place-items:center;overflow:hidden"><img src="${VBO_LOGO}" alt="" style="width:82%;height:82%;object-fit:contain"></span> Tournoi VBO
+        </div>
+      </div>
+      <div style="padding:16px;font-size:13.5px;line-height:1.55;color:var(--fg)">
+        <p style="margin:0 0 10px">Bonjour <b>${r.name}</b>,</p>
+        <p style="margin:0 0 10px">Vous avez été désigné(e) comme <b>référent gymnase</b> pour les tournois du Volley-Ball Ollioulais. Ce compte vous permet de suivre tous les tournois et de saisir les matchs sur place le jour de l'événement.</p>
+        <p style="margin:0 0 6px"><b>Votre accès :</b></p>
+        <div style="background:var(--surface-2);border-radius:12px;padding:12px 14px;margin:0 0 12px">
+          <div style="margin-bottom:8px"><small class="muted">Lien d'accès</small><br><a href="#" onclick="go('refLogin');return false" style="color:var(--brand);font-weight:700;word-break:break-all">${REF_LINK}</a></div>
+          <div style="margin-bottom:8px"><small class="muted">Identifiant (e-mail)</small><br><b>${r.email}</b></div>
+          <div><small class="muted">Mot de passe</small><br><b style="letter-spacing:.04em;font-family:var(--font-display)">${r.password}</b></div>
+        </div>
+        <p style="margin:0 0 10px">Ouvrez le lien ci-dessus, connectez-vous avec votre e-mail et ce mot de passe, puis sélectionnez le tournoi en cours. En cas de question, rapprochez-vous de l'organisateur.</p>
+        <p style="margin:0">Sportivement,<br><b>L'équipe Tournoi VBO</b></p>
+      </div>
+    </div>
+    <div class="card" style="background:var(--surface-2);border:none;margin-top:12px"><small class="muted">💡 Prototype : aucun e-mail réel n'est envoyé. Ceci est l'aperçu du message qui serait transmis.</small></div>
+    <button class="btn ghost" style="margin-top:14px" onclick="go('refLogin')">Tester l'espace référent</button>
+    <button class="btn ghost sm" style="margin-top:10px;width:100%" onclick="back()">← Retour aux référents</button>
+  </div>`;
+};
+
+screens.refLogin = ()=>{
+  setTop('Accès référent'); tabbar.hidden=true;
+  const demo=state.referents[0];
+  host.innerHTML=`<div class="card">
+    <div style="display:flex;align-items:center;gap:10px;margin-bottom:6px">
+      <span style="width:40px;height:40px;border-radius:12px;background:var(--brand-soft);color:var(--brand);display:grid;place-items:center;font-size:18px">${ICON.referee}</span>
+      <h3 style="font-size:18px;margin:0">Espace référent</h3>
+    </div>
+    <p class="lead">Connectez-vous avec l'e-mail et le mot de passe reçus par mail.</p>
+    <label class="field"><span>E-mail</span><input id="rl_mail" type="email" value="${demo?demo.email:''}" autocomplete="off"></label>
+    ${pwdField('Mot de passe','rl_pass',demo?demo.password:'')}
+    <button class="btn" style="margin-top:18px" onclick="refSignIn()">Se connecter</button>
+    <button class="btn ghost" style="margin-top:10px" onclick="toast('Démo : utilisez les identifiants pré-remplis')">Mot de passe oublié ?</button>
+  </div>
+  ${installBlock('full')}`;
+};
+window.refSignIn=()=>{
+  const mail=(document.getElementById('rl_mail').value||'').trim().toLowerCase();
+  const pass=(document.getElementById('rl_pass').value||'').trim();
+  const r=state.referents.find(x=>x.email.toLowerCase()===mail && x.password===pass);
+  if(!r){ toast('Identifiants incorrects'); return; }
+  if(r.status==='suspended'){ toast('⏸️ Ce compte est suspendu — contactez l\'organisation'); return; }
+  state.refSession=r.id; go('refSpace');
+};
+
+screens.refSpace = ()=>{
+  setTop(null); tabbar.hidden=true;
+  const r=state.referents.find(x=>x.id===state.refSession);
+  const all=state.tournaments.filter(t=>!t.archived);
+  const live=all.filter(t=>t.status==='live');
+  const others=all.filter(t=>t.status!=='live');
+  const row=t=>{
+    const st=TOURN_ST[t.status]||TOURN_ST.draft;
+    const open = t.status==='live' ? `openTournament('${t.id}')` : `toast('Ce tournoi n\\'est pas en cours')`;
+    return `<div class="list-item" style="background:var(--surface)" onclick="${open}">
+      <span class="ic" style="background:${st.icBg};color:${st.icFg}">${st.ic}</span>
+      <span style="min-width:0"><b>${t.config.name}</b><small>${t.config.teams||'?'} équipes · ${fmtDate(t.config.date)}</small></span>
+      <span class="badge ${st.badge}" style="margin-left:auto;flex:none">${st.label}</span>
+    </div>`;
+  };
+  host.innerHTML=`<div class="screen" style="padding:0">
+    <div style="display:flex;align-items:center;gap:10px;margin-bottom:16px">
+      <div class="logo">${logoMark()} ${APP_NAME}</div>
+      <button class="btn ghost sm" style="margin-left:auto" onclick="state.refSession=null;go('home')">Quitter</button>
+    </div>
+    <div class="card" style="background:var(--brand-soft);border:none;margin-bottom:14px;display:flex;align-items:center;gap:12px">
+      <span style="width:42px;height:42px;border-radius:12px;background:var(--surface);color:var(--brand);display:grid;place-items:center;font-size:19px;flex:none">${ICON.referee}</span>
+      <div><div style="font-family:var(--font-display);font-weight:800">${r?r.name:'Référent'}</div><small class="muted">Référent gymnase · accès à tous les tournois</small></div>
+    </div>
+    <p class="eyebrow" style="margin:4px 0 8px">Tournois en cours</p>
+    ${live.length?live.map(row).join(''):'<p class="muted" style="font-size:13px;margin:0 0 6px">Aucun tournoi en cours actuellement.</p>'}
+    ${others.length?`<p class="eyebrow" style="margin:18px 0 8px">Autres tournois</p>${others.map(row).join('')}`:''}
+    ${installBlock('full')}
+  </div>`;
+};
+
+screens.scan = ()=>{
+  setTop('Rejoindre un tournoi'); tabbar.hidden=true;
+  host.innerHTML=`<div style="padding:0;text-align:center">
+    <div style="margin:10px auto;width:220px;height:220px;border-radius:24px;background:var(--ink);position:relative;overflow:hidden;display:grid;place-items:center">
+      <div style="position:absolute;inset:26px;border:3px solid rgba(255,255,255,.6);border-radius:16px"></div>
+      <div style="position:absolute;left:26px;right:26px;height:3px;background:var(--accent);box-shadow:0 0 14px var(--accent);animation:scan 2s ease-in-out infinite"></div>
+      <span style="color:#fff;font-size:34px">🏐</span>
+    </div>
+    <style>@keyframes scan{0%,100%{top:30px}50%{top:186px}}</style>
+    <p class="lead">Pointez la caméra vers le QR code affiché par l'organisateur.</p>
+    <button class="btn accent" style="margin-top:8px" onclick="go('pickTeam')">Simuler un scan réussi</button>
+    <div style="display:flex;align-items:center;gap:10px;margin:18px 0"><div style="flex:1;height:1px;background:var(--line)"></div><small class="muted">ou</small><div style="flex:1;height:1px;background:var(--line)"></div></div>
+    <label class="field" style="text-align:left"><span>Code du tournoi</span><input value="${state.joinCode||'VB-7K2P'}" style="text-align:center;letter-spacing:.15em;font-weight:800"></label>
+    <button class="btn ghost" style="margin-top:12px" onclick="go('pickTeam')">Rejoindre avec le code</button>
+    ${installBlock('full')}
+  </div>`;
+};
+
+screens.pickTeam = ()=>{
+  setTop('Choisissez votre équipe'); tabbar.hidden=true;
+  const all = state.pools.flatMap(p=>p.teams.map(x=>({t:x.t,pool:p.letter})));
+  host.innerHTML=`<div style="padding:0">
+    <div class="card" style="background:var(--brand-soft);border:none;margin-bottom:14px">
+      <b style="font-family:var(--font-display)">${C.name}</b><br><small class="muted">Vous rejoignez en tant que capitaine</small>
+    </div>
+    <label class="field" style="margin-top:0"><span>Rechercher</span><input placeholder="Nom de l'équipe…" oninput="filterTeams(this.value)"></label>
+    <div id="teamList" style="margin-top:12px"></div>
+  </div>`;
+  window._teams=all; filterTeams('');
+};
+window.filterTeams=(q)=>{
+  const list=document.getElementById('teamList');
+  const items=window._teams.filter(x=>x.t.toLowerCase().includes(q.toLowerCase()));
+  list.innerHTML=items.map(x=>`<button class="list-item" style="width:100%;text-align:left;background:var(--surface)" onclick="state.captainTeam='${x.t.replace(/'/g,"\\'")}';go('myMatches')">
+    <span class="ic">🏐</span><span><b>${x.t}</b><small>Poule ${x.pool}</small></span><span class="chev">›</span></button>`).join('')||`<p class="muted" style="text-align:center;margin-top:20px">Aucune équipe trouvée</p>`;
+};
+
+screens.myMatches = ()=>{
+  setTop('Mes matchs'); tabbar.hidden=true;
+  const team=state.captainTeam||(state.pools[0]&&state.pools[0].teams[0]&&state.pools[0].teams[0].t)||'—';
+  const list=captainMatches(team); state.captainList=list;
+  const myPool=state.pools.find(p=>p.teams.some(x=>x.t===team));
+  const loc=myPool?`Poule ${myPool.letter} · ${gymName(myPool.gym)} · Terrain ${myPool.court}`:'—';
+  const live=list.filter(m=>m.status==='live');
+  const upcoming=list.filter(m=>m.status==='todo'||m.status==='pending');
+  const played=list.filter(m=>m.status==='valid');
+  const wins=played.filter(m=>wonBy(m,team)).length;
+  host.innerHTML=`<div style="padding:0">
+    <div style="display:flex;align-items:center;gap:12px;margin-bottom:8px">
+      <span class="ic" style="width:46px;height:46px;border-radius:13px;background:var(--brand-soft);color:var(--brand);display:grid;place-items:center;font-size:22px">🏐</span>
+      <div><div style="font-family:var(--font-display);font-weight:800;font-size:17px">${team}</div><small class="muted">${loc}</small></div>
+    </div>
+    <div class="grid2" style="margin:10px 0 2px">
+      <div class="card" style="text-align:center;padding:12px"><div style="font-family:var(--font-display);font-size:22px;font-weight:800">${list.length}</div><small class="muted">matchs au total</small></div>
+      <div class="card" style="text-align:center;padding:12px"><div style="font-family:var(--font-display);font-size:22px;font-weight:800">${wins}/${played.length}</div><small class="muted">victoires</small></div>
+    </div>
+    ${(()=>{
+      let h='';
+      if(live.length) h+=`<p class="eyebrow" style="margin:16px 0 8px">🔴 En cours</p>${live.map(m=>matchCard(m,team,true)).join('')}`;
+      if(upcoming.length) h+=`<p class="eyebrow" style="margin:18px 0 8px">⏭️ À venir</p>
+        <div class="card" style="margin:0 0 10px;background:var(--surface-2);border:none">
+          <small class="muted">💡 Quand les deux capitaines saisissent le même score, le match est validé automatiquement. En cas d'écart, l'organisation tranche.</small>
+        </div>
+        ${upcoming.map((m,i)=>matchCard(m,team,!live.length&&i===0)).join('')}`;
+      else if(!live.length) h+=`<div class="card" style="text-align:center;margin-top:16px;background:var(--ok-soft);border:none"><b>🎉 Tous vos matchs sont joués !</b></div>`;
+      if(played.length) h+=`<p class="eyebrow" style="margin:18px 0 8px">✅ Déjà joués</p>${played.map(m=>matchCard(m,team)).join('')}`;
+      if(!list.length) h=`<div class="card" style="text-align:center;margin-top:16px"><b>Aucun match programmé pour cette équipe.</b></div>`;
+      const refs=captainRefMatches(team).filter(m=>m.status!=='valid');
+      if(refs.length) h+=`<p class="eyebrow" style="margin:22px 0 8px;display:flex;align-items:center;gap:6px"><span style="display:inline-flex;color:var(--brand)">${ICON.whistle}</span>Matchs à arbitrer</p>
+        <div class="card" style="margin:0 0 8px;background:var(--surface-2);border:none;padding:11px 13px"><small class="muted">Votre équipe est désignée pour arbitrer ces matchs pendant qu'elle ne joue pas. Rendez-vous sur le terrain indiqué.</small></div>
+        ${refs.map(m=>refMatchCard(m)).join('')}`;
+      return h;
+    })()}
+    ${installBlock('full')}
+  </div>`;
+};
+function matchCard(m,team,hi){
+  let badge='', action='';
+  if(m.status==='valid'){ badge=`<span class="badge ok" style="margin-left:auto">✓ Validé</span>`; }
+  else if(m.status==='live'){ badge=`<span class="badge warn" style="margin-left:auto">● En cours</span>`; }
+  else if(m.status==='pending'){ badge=`<span class="badge wait" style="margin-left:auto">⏳ En attente de l'adversaire</span>`; }
+  else { badge=`<span class="badge brand" style="margin-left:auto">À saisir</span>`; }
+  const scObj = (m.status==='valid'||m.status==='live') ? {sa:m.sa, sb:m.sb, sets:m.sets}
+    : (m.mine ? {sa:m.mine.sa, sb:m.mine.sb, sets:m.mine.sets} : {sa:null, sb:null});
+  action = m.status==='todo'
+    ? `<button class="btn sm" style="width:100%" onclick="go('enterScore',{id:'${m.id}'})">Saisir le score</button>`
+    : m.status==='pending'
+    ? `<button class="btn ghost sm" style="width:100%" onclick="go('enterScore',{id:'${m.id}'})">Modifier ma saisie</button>`
+    : m.status==='live'
+    ? `<button class="btn ghost sm" style="width:100%" onclick="go('enterScore',{id:'${m.id}'})">Saisir le score en direct</button>`
+    : '';
+  return `<div class="match"${hi?' style="border:2px solid var(--brand)"':''}>
+    <div class="meta"><span class="chip"${hi?' style="background:var(--brand-soft);color:var(--brand)"':''}>Tour ${m.round} · ${m.time}</span><span>T${m.court} · ${m.gym}</span>${badge}</div>
+    <div class="teams"><span class="t">${m.a}</span>
+      <span class="sc">${scoreSC(scObj)}</span>
+      <span class="t right">${m.b}</span></div>
+    ${refLine(m)}
+    ${action}</div>`;
+}
+function refMatchCard(m){
+  const st = m.status==='live'
+    ? `<span class="badge warn" style="margin-left:auto">● En cours</span>`
+    : `<span class="badge brand" style="margin-left:auto">À arbitrer</span>`;
+  return `<div class="match">
+    <div class="meta"><span class="chip">Tour ${m.round} · ${m.time}</span><span>T${m.court} · ${m.gym}</span>${st}</div>
+    <div class="teams"><span class="t">${m.a}</span>
+      <span class="sc" style="color:var(--muted);font-weight:700">vs</span>
+      <span class="t right">${m.b}</span></div>
+    <div class="muted" style="font-size:11px;margin-top:7px">🏐 Poule ${m.pool}</div>
+  </div>`;
+}
+
+screens.enterScore = (o)=>{
+  setTop('Saisir le score'); tabbar.hidden=true;
+  const list=state.captainList||[];
+  const m=list.find(x=>x.id===o.id)||list[0]||{id:'',a:'Équipe A',b:'Équipe B',pool:'–',court:'–',mine:null};
+  const nSets=Math.max(1, state.config.sets||1);
+  const preSets=(m.mine&&m.mine.sets&&m.mine.sets.length)?m.mine.sets
+    : (m.mine&&m.mine.sa!=null)?[[m.mine.sa,m.mine.sb]] : [];
+  const rules = nSets===1
+    ? `1 set à ${state.config.pointsPerSet} points${state.config.twoPointGap?' · 2 points d\'écart':''}`
+    : `${nSets} sets à ${state.config.pointsPerSet} points${state.config.twoPointGap?' · 2 points d\'écart':''}`;
+  const rows = Array.from({length:nSets}, (_,s)=>{
+    const sa=preSets[s]?preSets[s][0]:''; const sb=preSets[s]?preSets[s][1]:'';
+    return `<div class="scorebox"${s>0?' style="margin-top:12px"':''}>
+      ${nSets>1?`<div class="setlab">Set ${s+1}</div>`:''}
+      <div><div class="tlab">${m.a}</div><input class="num" id="sa${s}" inputmode="numeric" value="${sa}" placeholder="0"></div>
+      <div class="dash">–</div>
+      <div><div class="tlab">${m.b}</div><input class="num" id="sb${s}" inputmode="numeric" value="${sb}" placeholder="0"></div>
+    </div>`;
+  }).join('');
+  host.innerHTML=`<div style="padding:0">
+    <div class="card" style="text-align:center;background:var(--surface-2);border:none">
+      <span class="chip">Poule ${m.pool} · Terrain ${m.court}</span>
+      <div style="margin-top:8px;font-size:13px" class="muted">${rules}</div>
+    </div>
+    <div style="margin-top:20px">${rows}</div>
+    <button class="btn" style="margin-top:16px" onclick="submitScore('${m.id}')">Valider mon score</button>
+    <p class="demo-note" style="margin-top:16px">Pour la démo : saisissez <b>25–22</b> ${nSets>1?'à chaque set ':''}pour valider automatiquement (l'autre capitaine a mis pareil), ou un autre score pour créer un conflit.</p>
+  </div>`;
+};
+window.submitScore=(id)=>{
+  const nSets=Math.max(1, state.config.sets||1);
+  const sets=[];
+  for(let s=0;s<nSets;s++){
+    const a=parseInt((document.getElementById('sa'+s)||{}).value);
+    const b=parseInt((document.getElementById('sb'+s)||{}).value);
+    if(isNaN(a)||isNaN(b)){ toast(nSets>1?'Entrez les scores de chaque set':'Entrez les deux scores'); return; }
+    if(a===b){ toast(nSets>1?`Set ${s+1} : un set ne peut pas être à égalité`:'Un set ne peut pas finir à égalité'); return; }
+    sets.push([a,b]);
+  }
+  const m=(state.captainList||[]).find(x=>x.id===id); if(!m){ go('myMatches',{replace:true}); return; }
+  const se=state.schedule[+id.replace('cm','')]; // entrée de planning sous-jacente
+  const sa=sets[0][0], sb=sets[0][1];
+  // Demo logic: other captain already entered 25-22 on every set
+  const allMatch=sets.every(([a,b])=>a===25&&b===22);
+  if(allMatch){
+    if(se) se.capState={status:'valid', sa, sb, sets, mine:null};
+    toast('✓ Scores identiques — match validé automatiquement !');
+  }else{
+    if(se) se.capState={status:'pending', mine:{sa,sb,sets}};
+    toast('Score enregistré — en attente de l\'autre capitaine');
+  }
+  go('myMatches',{replace:true});
+};
+
+/* ---------- Render dispatch ---------- */
+function render(screen,opts){
+  (screens[screen]||screens.home)(opts||{});
+  host.scrollTop=0;
+}
+go('home');
+</script>

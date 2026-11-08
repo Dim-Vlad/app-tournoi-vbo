@@ -1,0 +1,16 @@
+# Système
+.DS_Store
+Thumbs.db
+
+# Éditeurs
+.vscode/
+.idea/
+
+# Dépendances / build (si ajoutés plus tard)
+node_modules/
+dist/
+
+# Secrets (ne jamais committer les clés Supabase service_role, .env, etc.)
+.env
+.env.*
+*.local
